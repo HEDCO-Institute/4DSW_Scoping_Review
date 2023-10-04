@@ -1,13 +1,9 @@
 library(shiny)
-#library(shinydashboard)
 library(tidyverse)
 library(rio)
 library(here)
 library(RefManageR)
 library(DT)
-
-#setwd("C:/Users/strevino/OneDrive - University Of Oregon/Desktop/HEDCO Institute/GitHub R Projects/4DSW_Scoping_Review")
-#setwd(here::here())
 
 #import data
 raw_df <- import(here("data", "4DSW_Data_copy.xlsx")) 
