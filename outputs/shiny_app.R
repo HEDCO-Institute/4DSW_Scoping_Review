@@ -310,3 +310,4 @@ server <- function(input, output, session) {
 
 shinyApp(ui, server)
 
+rsconnect::deployApp(appDir = "outputs/data_dashboard", appName = "4dsw_data_dashboard") #file needs to be named app.R
