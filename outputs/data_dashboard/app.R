@@ -88,19 +88,19 @@ jd <- sagg_df %>%
 
 
 #transform for data table
+#transform for data table
 td <- jd %>% 
   mutate_all(~ ifelse(is.na(.) | .x == -999 | . == "", "Not Reported", .)) %>% 
   mutate_all(~ str_remove_all(as.character(.), "-999; |; -999")) %>% 
   mutate(equity = str_replace_all(equity, c("Raceethnicity" = "Race/Ethnicity", "Sexgender" = "Sex/Gender", "Ell" = "ELL", 
                                             "Ses" = "SES", "Specialeducation" = "Special Education")),
-         linked_title = paste0("<a href='", link, "' target='_blank'>", title, "</a>")) %>% 
+         linked_title = ifelse(link != "Not Reported", paste0("<a href='", link, "' target='_blank'>", title, "</a>"), title)) %>% 
+  arrange(desc(publication_year), title) %>% 
   select(-title) %>% 
   rename(title = linked_title) %>% 
   select(publication_year, title, author, data_years, community, school_level, grade_level, state, 
          evidence_domain, effectiveness_approach, effectiveness, equity,
-         publication_type, publisher, citation) %>% 
-  arrange(desc(publication_year), title)
-
+         publication_type, publisher, citation) 
 
 #
 #paste0("[", title, "]", "(", link, ")")
