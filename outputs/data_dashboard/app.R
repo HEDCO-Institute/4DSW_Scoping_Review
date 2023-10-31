@@ -1,117 +1,71 @@
-library(shiny)
-library(tidyverse)
-library(rio)
-library(here)
-library(RefManageR)
-library(DT)
-
-#import data
-raw_df <- import(here("data", "4DSW_Data_copy.xlsx")) 
-
-#list of single variables (to aggregate across id only)
-single_cat_vars <- c("author", "publication_year", "publication_type", "publisher", "student_type", "student_discipline", 
-                 "evidence_domain", "data_years", "effectiveness_approach")
 
 
-#aggregate non-numeric variables
-agg_df <- raw_df %>% 
-  select(-starts_with("n")) %>% 
-  group_by(refid) %>% 
-  summarize(across(everything(), ~paste(unique(.), collapse = "; "))) %>% 
-  ungroup() 
+#install and load packages
+if (!require("pacman")) install.packages("pacman")
+pacman::p_load(tidyverse, rio, here, DT, shiny, plotly, openxlsx)
 
-#subset of single single aggregated variables
-sagg_df <- agg_df %>% 
-  select(refid, all_of(single_cat_vars))
+#import cleaned data
+cleaned_df <- import(here("data", "4dsw_app_data.xlsx"))
 
-#create dataframe to marge state abbreviations
-state_abbrev_df <- data.frame(category = state.name,
-                              abbrev = state.abb)
-
-#transform wide variables to categorical variables  
-df_long <- agg_df %>%
-  select(refid, starts_with("community"), starts_with("state"), starts_with("grade"),
-         starts_with("school"), starts_with("effectiveness"), starts_with("equity"), 
-         -effectiveness_approach) %>% 
-  pivot_longer(cols = -refid, names_to = "variable", values_to = "response") %>%
-  mutate(
-    value = sub(".*_", "", variable),
-    value = str_to_title(value),
-    new_var_name = case_when(str_detect(variable, "^community") ~ "community", 
-                            str_detect(variable, "^state") ~ "state",
-                            str_detect(variable, "^grade") ~ "grade_level",
-                            str_detect(variable, "^school") ~ "school_level",
-                            str_detect(variable, "^effectiveness") ~ "effectiveness",
-                            str_detect(variable, "^equity") ~ "equity",
-                             TRUE ~ variable),
-    category = case_when(str_detect(variable, "^community") & response == "Yes" ~  value, 
-                         str_detect(variable, "^state") & response == "Yes" ~  value,
-                         str_detect(variable, "^grade") & response == "Yes" ~  value,
-                         str_detect(variable, "^school") & response == "Yes" ~  value,
-                         str_detect(variable, "^effectiveness") & response == "Yes" ~  value,
-                         str_detect(variable, "^equity") & response == "Yes" ~  value,
-                         TRUE ~ NA)) %>% 
-  mutate(category = case_when(category == "Newmexico" ~ "New Mexico",
-                              category == "Southdakota" ~ "South Dakota",
-                              category == "Northdakota" ~ "North Dakota",
-                              TRUE ~ category)) %>% 
-  left_join(state_abbrev_df, by = "category") %>% 
-  mutate(abbrev = ifelse(is.na(abbrev), category, abbrev)) %>% 
-  select(-category) %>% 
-  rename(category = abbrev)
-
-td_longvar <- df_long %>%
-  group_by(refid, new_var_name) %>%
-  summarise(category_value = paste(category[!is.na(category)], collapse = "; "), .groups = "drop_last") %>%
-  pivot_wider(names_from = new_var_name, values_from = category_value) %>% 
-  ungroup()
-
-#import reference info from Zotero
-ref_df <- import(here("data", "4dsw_eligible_citations.xlsx")) %>% 
-  janitor::clean_names() %>% 
-  rename(citation = bibliography)
-
-#import citation links
-link_df <- import(here("data", "4dsw_eligible_citations_links.xlsx")) %>% 
-  janitor::clean_names() %>% 
-  rename(link = link_to_public_full_text) %>% 
-  select(refid, link)
-
-current_included_refids <- raw_df$refid
-
-#merge data together
-jd <- sagg_df %>% 
-  left_join(td_longvar) %>% 
-  left_join(ref_df) %>% 
-  left_join(link_df)
+cleaned_df_to_export <- cleaned_df %>% 
+  rename(study_design = effectiveness_approach,
+         outcome_domain_studied = effectiveness,
+         equity_domain_studied = equity,
+         `Student Race/Ethnicity` = race_ethnicity,
+         school_type = school_level,
+         rurality = community) %>% 
+  mutate(study_design = case_when(study_design == "Hierarchical Linear Modeling" ~ "Between Groups - With Controls",
+                                  study_design == "Regression Adjustment" ~ "Between Groups - With Controls",
+                                  study_design == "ANOVA" ~ "Between Groups - Without Controls", 
+                                  study_design == "MANOVA" ~ "Between Groups - Without Controls", 
+                                  study_design == "Mann-Whitney U test" ~ "Between Groups - Without Controls", 
+                                  study_design == "T-Test" ~ "Between Groups - Without Controls", 
+                                  study_design == "" ~ "Between Groups - Without Controls", 
+                                  study_design == "No" ~ "Not Reported",
+                                  TRUE ~ study_design)) %>% 
+  select(publication_year, title, corr_author_name, data_years, rurality, school_type, grade_level, `Student Race/Ethnicity`,
+         state, fifth_day_activities, study_design, outcome_domain_studied, equity_domain_studied, evidence_domain,
+         publication_type, publisher, citation, link, author_link)
   
 
-
 #transform for data table
-#transform for data table
-td <- jd %>% 
-  mutate_all(~ ifelse(is.na(.) | .x == -999 | . == "", "Not Reported", .)) %>% 
-  mutate_all(~ str_remove_all(as.character(.), "-999; |; -999")) %>% 
-  mutate(equity = str_replace_all(equity, c("Raceethnicity" = "Race/Ethnicity", "Sexgender" = "Sex/Gender", "Ell" = "ELL", 
-                                            "Ses" = "SES", "Specialeducation" = "Special Education")),
-         linked_title = ifelse(link != "Not Reported", paste0("<a href='", link, "' target='_blank'>", title, "</a>"), title)) %>% 
+td <- cleaned_df %>% 
+  mutate(linked_title = ifelse(link != "Not Reported", paste0("<a href='", link, "' target='_blank'>", title, "</a>"), title),
+         corresponding_author = ifelse(author_link != "Not Reported", paste0("<a href='", author_link, "' target='_blank'>", corr_author_name, "</a>"), corr_author_name),
+         publication_year = as.numeric(publication_year)) %>% 
   arrange(desc(publication_year), title) %>% 
   select(-title) %>% 
-  rename(title = linked_title) %>% 
-  select(publication_year, title, author, data_years, community, school_level, grade_level, state, 
-         evidence_domain, effectiveness_approach, effectiveness, equity,
-         publication_type, publisher, citation) 
+  rename(title = linked_title,
+         study_design = effectiveness_approach,
+         outcome_domain_studied = effectiveness,
+         equity_domain_studied = equity,
+         `Student Race/Ethnicity` = race_ethnicity,
+         school_type = school_level,
+         rurality = community) %>% 
+  mutate(study_design = case_when(study_design == "Hierarchical Linear Modeling" ~ "Between Groups - With Controls",
+                                  study_design == "Regression Adjustment" ~ "Between Groups - With Controls",
+                                  study_design == "ANOVA" ~ "Between Groups - Without Controls", 
+                                  study_design == "MANOVA" ~ "Between Groups - Without Controls", 
+                                  study_design == "Mann-Whitney U test" ~ "Between Groups - Without Controls", 
+                                  study_design == "T-Test" ~ "Between Groups - Without Controls", 
+                                  study_design == "" ~ "Between Groups - Without Controls", 
+                                  study_design == "No" ~ "Not Reported",
+                                  TRUE ~ study_design)) %>% 
+  select(publication_year, title, corresponding_author, data_years, rurality, school_type, grade_level, `Student Race/Ethnicity`,
+         state, fifth_day_activities, study_design, outcome_domain_studied, equity_domain_studied, #evidence_domain, #INTERNAL ONLY
+         publication_type) #, publisher, citation) #INTERNAL ONLY
 
-#
-#paste0("[", title, "]", "(", link, ")")
 
 #define filter choices
 states <- state.abb
 grades <- c("K", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12")
-ev_domain <- unique(raw_df$evidence_domain)
 effect_choices <- c("Approach", "Achievement", "Attainment", "Attendance", "Crime", "Health", "Housing",
                     "Incidents", "Retention")
-equity_choices <- c("Age", "ELL", "Gifted", "Immigrant", "Race/Ethnicity", "Rurality", "SES", "Sex/Gender", "Special Education")
+fifthday_choices <- c("Extracurriculars (clubs/sports)", "Student Instruction", "Teacher In-Service",
+                      "Nothing (shut down school)", "Child Care", "Field/Educational Trips")
+race_ethnicity_choices <- c("American Indian and/or Alaska Native", "Asian", "Black or African American",
+                            "Hispanic, Latino, or Spanish", "Native Hawaiian/Other Pacific Islander",
+                            "White", "Other")
 
 #function to capitalize column names
 capitalize_colnames <- function(df) {
@@ -132,150 +86,475 @@ ui <- fluidPage(
   # Application title
   tags$head(
     tags$style(
-      HTML("
-        .title-panel {
-          text-align: left;
-          padding-left: 10px; 
-          font-size: 28px;
-          /*font-weight: bold;
-          font-family: Helvetica, sans-serif;
-        }
-        
-         .dt-center.dt-body-center.column-Title {
-           width: 700px !important; /* Adjust the width as needed */
-        }
-      ")
-    )
+      HTML('
+           .title-panel {
+             text-align: left;
+             padding-left: 10px; 
+             font-size: 28px;
+             /*font-weight: bold; */
+             font-family: "Open Sans", sans-serif;
+           }
+           
+           .dt-center.dt-body-center.column-Title {
+             width: 700px !important; 
+           }
+           
+           body {
+             font-family: "Source Sans", sans-serif; 
+           }
+           
+           .reset-button {
+             padding-left: 5px; 
+           }
+           
+           table {
+             border-collapse: collapse;
+             width: 100%;
+             border: 1px solid #ddd;
+           }
+           th, td {
+             text-align: left;
+             padding: 8px;
+             border-bottom: 1px solid #ddd;
+           }
+           
+           .table-container {
+             display: grid;
+             grid-template-columns: repeat(3, 1fr); /* Adjust 2 to the desired number of columns */
+             gap: 5px;
+           }
+           .table {
+             padding: 5px;
+           }
+         
+           /* This block of commented-out styles is closed properly now */
+           /*
+           .table-container {
+             display: flex;
+           }
+           .table-container .table {
+             width: 50%;
+             padding: 10px;
+           }
+           */
+           
+           $(document).ready(function() {
+             $("[data-toggle=tooltip]").tooltip();
+           });
+         ')
+      
+    ),
+    tags$link(rel = "stylesheet", type = "text/css", href = "https://fonts.googleapis.com/css?family=Open+Sans")
   ),
-  div(class = "title-panel", "Empirical Studies on the Four Day School Week"),
+  div(class = "title-panel", "Four-Day School Week Research Database"),
+  
+  # Instructions
+  div("Step 1 - If you'd like to look at studies in a specific state, select that state below:", 
+      style = "text-align: left; font-size: 16px; margin-top: 10px; padding-left: 10px; color: #007030; font-weight: bold;"),
+  div("Tip: You can only select one state at a time. Once a state is selected, click it again to de-select it. There is no data available for states that are not shown in green.", 
+      style = "text-align: left; font-size: 12px; margin-top: 2px; padding-left: 10px;"),
+  
+  # US Map
+  plotlyOutput("us_map"),
+  
+  # Instructions
+  div("Step 2 - Select any additional filters:", 
+      style = "text-align: left; font-size: 16px; margin-top: 10px; margin-bottom: 5px; padding-left: 10px; color: #007030; font-weight: bold;"),
   
  # Top panel with div and filters
   fluidRow(
     div(
-      selectizeInput("state_filter", "State:", choices = states, multiple = TRUE),
-      style = "display:inline-block; width:10%; margin-left: 25px"
-    ),
-    div(
-      selectizeInput("community_filter", "Location:", choices = c("Rural", "Suburban", "Urban"), multiple = TRUE),
-      style = "display:inline-block; width:12%;"
+      selectizeInput("community_filter", "Rurality:", choices = c("Rural", "Suburban", "Urban"), multiple = TRUE),
+      style = "display:inline-block; width:25%; margin-left: 25px"
     ),
     div(
       selectizeInput("school_filter", "School Type:", choices = c("Elementary", "Middle", "High"), multiple = TRUE),
-      style = "display:inline-block; width:12%;"
+      style = "display:inline-block; width:25%;"
     ),
+    div(
+      selectizeInput("race_filter", "Student Race/Ethnicity:", choices = race_ethnicity_choices, multiple = TRUE),
+      style = "display:inline-block; width:25%;"
+    )
+    ),
+    
+  fluidRow(
     div(
       selectizeInput("grade_filter", "Grade:", choices = grades, multiple = TRUE),
-      style = "display:inline-block; width:10%;"
+      style = "display:inline-block; width:25%; margin-left: 25px"
     ),
     div(
-      selectizeInput("evidence_filter", "Evidence Type:", choices = ev_domain, multiple = TRUE),
-      style = "display:inline-block; width:15%;"
+      selectizeInput("fifthday_filter", "Fifth Day Activity:", choices = fifthday_choices, multiple = TRUE),
+      style = "display:inline-block; width:25%;"
     ),
     div(
-      selectizeInput("effectiveness_filter", "Effectiveness:", choices = effect_choices, multiple = TRUE),
-      style = "display:inline-block; width:15%;"
+      selectizeInput("effectiveness_filter", "Outcome Domain Studied:", choices = effect_choices, multiple = TRUE),
+      style = "display:inline-block; width:25%;"
     ),
-    div(
-      selectizeInput("equity_filter", "Equity:", choices = equity_choices, multiple = TRUE),
-      style = "display:inline-block; width:15%;"
-    ),
+    
+    fluidRow(div(
+      actionButton("resetFilters", "Reset Filters", class = "reset-button"),
+      style = "padding-left: 30px;"))
+    
+
     
   ),
-  
-  # Top panel with filters
-  # fluidRow(
-  #   column(6, selectizeInput("state_filter", "State:", choices = states, multiple = TRUE)),
-  #   column(6, selectizeInput("community_filter", "Location:", choices = c("Rural", "Suburban", "Urban"), multiple = TRUE)),
-  #   column(6, selectizeInput("school_filter", "School Type:", choices = c("Elementary", "Middle", "High"), multiple = TRUE)),
-  #   column(6, selectizeInput("grade_filter", "Grade", choices = grades, multiple = TRUE)),
-  #   column(12, actionButton("reset", "Reset Filters"))
-  # ),
-  
-  # Sidebar with filters
-  # sidebarLayout(
-  #   sidebarPanel(
-  #     selectizeInput("state_filter", "State:", choices = states, multiple = TRUE),
-  #     selectizeInput("community_filter", "Location:", choices = c("Rural", "Suburban", "Urban"), multiple = TRUE),
-  #     selectizeInput("school_filter", "School Type:", choices = c("Elementary", "Middle", "High"), multiple = TRUE),
-  #     selectizeInput("grade_filter", "Grade", choices = grades, multiple = TRUE),
-  #     actionButton("reset", "Reset Filters")
+ 
+  # Instructions
+  div("Step 3 - Results that meet your criteria are below:", 
+      style = "text-align: left; font-size: 16px; margin-top: 10px; padding-left: 10px; margin-bottom: 5px; color: #007030; font-weight: bold;"),
+ 
+ 
+  # TabsetPanel for Data Table and Summary Statistics
+  # tabsetPanel(
+  #   type = "tabs",
+  #   tabPanel("Data Table",
+  #            # Show table
+  #            mainPanel(h2("Empirical Studies"),
+  #                      p("All research studies meeting your criteria:"),
+  #              DTOutput("datatable"),
+  #              downloadButton("downloadData", "Download All Data")
+  #            )
   #   ),
-    
-    # Show table
-    mainPanel(
-      DTOutput("datatable")
-    )
- )
+  #   tabPanel("Summary Statistics",
+  #            h2("Summary Statistics"),
+  #            p("Frequency tables of studies meeting your criteria:"),
+  #            uiOutput("summary_stats_table")
+  #   )
+  #   
+  #   
+  #  
+  #   ),
+ tabsetPanel(
+   type = "tabs",
+   tabPanel("Data Table",
+            # Show table
+            mainPanel(
+              h2("Empirical Studies", style = "display: inline-block; margin-right: 20px;"),
+              div(style = "display: flex; justify-content: space-between; align-items: center; ", 
+                  p("All research studies meeting your criteria:"),
+                  div(
+                    downloadButton("downloadData", "Download All Data", style = "display: inline-block; margin-right: 10px; margin-bottom: 5px; margin-left: 10px;"),
+                    downloadButton("downloadFilteredData", "Download Filtered Data", style = "display: inline-block; margin-bottom: 5px; margin-left: 10px;")
+                  )
+              ),
+              DTOutput("datatable")
+            )
+   ),
+   tabPanel("Summary Statistics",
+            h2("Summary Statistics"),
+            p("The tables below present frequencies based on the filters you have selected above. The tables will automatically update as you change filters. "),
+            uiOutput("summary_stats_table")
+   ),
+   tabPanel("Glossary",
+            
+            h3("Glossary of Terms"),
+            
+            h4("Publication Year:"),
+            p("Year the study was published."),
+            
+            h4("Title:"),
+            p("Title of the article this study is based on. If a link is available, it will link to the full article."),
+            
+            h4("Corresponding Author:"),
+            p("Author listed in article as corresponding author. If a link is available, it will link to their public website."),
+            
+            h4("Data Years:"),
+            p("The years from which data originated."),
+            
+            h4("Rurality:"),
+            p("School rurality status."),
+            
+            h4("School Type"),
+            p("Educational level of schools (e.g., Elementary)"),
+            
+            h4("Grade Level:"),
+            p("Grade level of students."),
+            
+            h4("Student Race/Ethnicity:"),
+            p("This column lists the race/ethnicities of students in the study."),
+            
+            h4("State:"),
+            p("State(s) where the study took place."),
+            
+            h4("Fifth Day Activity:"),
+            p("What researchers reported regarding what schools did during the fifth day of the week when classes were not formally in session."),
+            
+            tags$ul(
+              tags$li(HTML("<strong>Childcare:</strong> School-provided childcare")),
+              tags$li(HTML("<strong>School is closed:</strong> Schools that were not open to students on the fifth day")),
+              tags$li(HTML("<strong>Student instruction:</strong> Schools that offered student instruction for at least one off-day per school year (full or partial day)")),
+              tags$li(HTML("<strong>Teacher in-service:</strong> Schools that offered teacher in-service on at least one off-day per school year (full or partial day)"))
+            ),
+            
+            h4("Study Design:"),
+            p("The statistical approach or design of the study"),
+            
+            tags$ul(
+              tags$li(HTML("<strong>Before-after study:</strong> Studies that test differences in outcomes before and after a school switches from a five-day to a four-day week")),
+              tags$li(HTML("<strong>Between-group – with controls:</strong> Studies that used Hierarchical linear modeling or regression adjustment, examining the relationship between four-day school weeks and outcomes interest while controlling for confounding variables")),
+              tags$li(HTML("<strong>Between-group – without controls:</strong> Studies that used ANOVA, MANOVA, Mann-Whitney U tests, or t-tests to test differences in outcomes between four-day school week and five-day school week outcomes without controlling for covariates")),
+              tags$li(HTML("<strong>Computational model:</strong> Use of mathematical models and simulated data.")),
+              tags$li(HTML("<strong>Descriptive statistics only:</strong> Studies that presented descriptive information and did not perform inferential statistical analyses")),
+              tags$li(HTML("<strong>Difference-in-differences:</strong> Studies that analyze the difference in outcomes before and after a school switches to a four-day week compared to outcomes for schools that remained on a five-day week")),
+              tags$li(HTML("<strong>MANOVA:</strong> Studies that used Multivariate Analysis of Variance to test between-group differences for a composite outcome variable")),
+              tags$li(HTML("<strong>Matched pair design:</strong> Studies that match samples based on characteristics such as demographic information, school location or school type before testing outcomes between four-day and five-day week schools."))
+            ),
+            
+            h4("Outcome Domain Studied:"),
+            p("Variables researchers reported as outcomes. For this review, we grouped outcomes that were similar. For example, “Health” refers to any kind of health status or health-related behaviors."),
+            
+            tags$ul(
+              tags$li(HTML("<strong>Achievement:</strong> Academic achievement of any kind (standardized tests, grades)")),
+              tags$li(HTML("<strong>Attainment:</strong> Indicators of level of education completed (passing a grade level, graduation)")),
+              tags$li(HTML("<strong>Attendance:</strong> Number of days a student attended school or was absent")),
+              tags$li(HTML("<strong>Climate:</strong> School climate such as belongingness or feelings about school")),
+              tags$li(HTML("<strong>Crime:</strong> Juvenile crime or juvenile justice involvement rates in a community")),
+              tags$li(HTML("<strong>Health:</strong> Health status or health-related behaviors.")),
+              tags$li(HTML("<strong>Disciplinary Incidents:</strong> Bullying, fighting, truancy, suspensions, expulsions")),
+              tags$li(HTML("<strong>Retention:</strong> Teacher retention rates or determinants of teacher retention"))
+            ),
+            
+            h4("Equity Domain Studied:"),
+            p("Variables that researchers used to test differences across outcomes. For example, a study that is labeled with “age” is a study in which researchers tested differences in outcomes across student age groups."),
+            
+               tags$ul(
+                 tags$li(HTML("<strong>Age:</strong> Student age")),
+                 tags$li(HTML("<strong>English Language Learner:</strong> Student English-language-learner status")),
+                 tags$li(HTML("<strong>Gifted:</strong> Student gifted status")),
+                 tags$li(HTML("<strong>Immigrant:</strong> Student immigrant status")),
+                 tags$li(HTML("<strong>Race/ethnicity:</strong> Student’s race/ethnicity")),
+                 tags$li(HTML("<strong>Rurality:</strong> School rurality status")),
+                 tags$li(HTML("<strong>Socioeconomic Status:</strong> Student and family socioeconomic status")),
+                 tags$li(HTML("<strong>Sex/gender:</strong> Student sex or gender identity")),
+                 tags$li(HTML("<strong>Special Education:</strong> Student special education status"))
+                 ),
+            
+            h4("Publication Type:"),
+            
+               tags$ul(
+                 tags$li(HTML("<strong>Journal:</strong> Academic peer-reviewed journal")),
+                 tags$li(HTML("<strong>Preprint:</strong> Manuscript that has been shared prior to journal peer-review")),
+                 tags$li(HTML("<strong>Report:</strong> Self-published manuscripts serving as the final version of record (these may or may not have been peer-reviewed)")),
+                 tags$li(HTML("<strong>Student:</strong> Undergraduate degree theses, Master’s degree theses, and doctoral dissertations"))
+               )
+             )
+  ))
 
 
 server <- function(input, output, session) {
-  # Create a reactive filtered dataset based on user selections
+  
+  # Create a reactive variable to store selected states
+  selected_states <- reactiveVal(character(0))
+  
+  clicked_state <- reactiveVal(character(0))
+  
+  # Create base map
+  base_map <- plot_geo() %>%
+    add_trace(
+      z = rep(1, 33),
+      locations = c("AK", "AZ",  "CA", "CO",  "FL", "GA", "HI", "ID", "IL", "IA", "KS", "KY", "LA", "ME", "MA", "MI", "MN", "MO", "MT", "NE", "NV", "NH", "NM", "NC", "ND", "OK", "OR", "PA", "SD", "TX", "UT", "WA", "WY"),
+      colorscale = list(c(0, 1), c("#007030", "#007030")),
+      #colors = custom_color_scale[selected_states],
+      type = 'choropleth',
+      locationmode = 'USA-states',
+      marker = list(line = list(color = 'rgb(255,255,255)', width = 2)),
+      hoverinfo = 'location',
+      text = c("Alaska", "Arizona", "California", "Colorado", "Florida", "Georgia", "Hawaii", "Idaho", "Illinois", "Iowa", "Kansas", "Kentucky", "Louisiana", "Maine", "Massachusetts", "Michigan", "Minnesota", "Missouri", "Montana", "Nebraska", "Nevada", "New Hampshire", "New Mexico", "North Carolina", "North Dakota", "Oklahoma", "Oregon", "Pennsylvania", "South Dakota", "Texas", "Utah", "Washington", "Wyoming"),
+      customdata = c("AK", "AZ", "CA", "CO", "FL", "GA", "HI", "ID", "IL",  "IA", "KS", "KY", "LA", "ME", "MA", "MI", "MN", "MO", "MT", "NE", "NV", "NH", "NM", "NC", "ND", "OK", "OR", "PA", "SD", "TX", "UT", "WA", "WY"),
+      showscale = FALSE, # Hide the color scale
+      colorscale = list(c(0, 1), c("rgb(255, 255, 255)", "rgb(255, 255, 255)")) # Set the color scale to be transparent
+      
+    ) %>%
+    layout(
+      geo = list(scope = 'usa')
+    )
+
+  # Create a US map
+  output$us_map <- renderPlotly({
+
+
+
+    # Register the 'plotly_click' event
+    event_register(base_map, 'plotly_click')
+
+
+    # us_states
+    base_map
+  })
+
+  
+  # Listen to map click events and update selected states
+  observeEvent(event_data("plotly_click"), {
+    event <- event_data("plotly_click")
+    if (!is.null(event)) {
+      clicked_state <- event$customdata
+      if (clicked_state %in% selected_states()) {
+        # If the state is already selected, remove it
+        selected_states(selected_states()[selected_states() != clicked_state])
+      } else {
+        # If the state is not selected, add it to the list
+        selected_states(c(selected_states(), clicked_state))
+      }
+      # Update the map based on selected states or revert to the base map
+      if (length(selected_states()) > 0) {
+        # Update the map with selected states
+        output$us_map <- renderPlotly({
+            us_states <- plot_geo() %>%
+
+              # Highlight selected states with custom color
+              add_trace(
+                z = length(selected_states),
+                locations = selected_states(),
+                colorscale = list(c(0, 1), c("#007030", "#007030")),
+                type = 'choropleth',
+                locationmode = 'USA-states',
+                marker = list(line = list(color = 'rgb(255,255,255)', width = 2)),
+                hoverinfo = 'location',
+                customdata = selected_states(),
+                showscale = FALSE,
+                colorscale = list(c(0, 1), c("rgb(255, 255, 255)", "rgb(255, 255, 255)"))
+              ) %>%
+              layout(
+                geo = list(scope = 'usa')
+              )
+
+            us_states
+        })
+      } else {
+        # Revert to the base map
+        output$us_map <- renderPlotly({
+          base_map
+        })
+      }
+    }
+    
+
+  })
+  
+
+
+
+  
+  
+   # Create a reactive filtered dataset based on user selections
   filtered_dataset <- reactive({
     filtered_data <- td
     
-    # Filter by state
-    if (!is.null(input$state_filter) && length(input$state_filter) > 0) {
-      filter_expr_state <- sapply(input$state_filter, function(state_filter) {
-        grepl(state_filter, filtered_data$state, ignore.case = TRUE)
-      })
+    # Filter by selected states (FILTER WHEN MULTIPLE = OR)
+    #if (length(selected_states()) > 0) {
+    if (!is.null(selected_states()) && length(selected_states()) > 0) {
+      selected_states_regex <- paste(selected_states(), collapse = "|")
       filtered_data <- filtered_data %>%
-        filter(rowSums(filter_expr_state) > 0)
+        filter(grepl(selected_states_regex, state, ignore.case = TRUE))
     }
     
     # Filter by community
+    # if (!is.null(input$community_filter) && length(input$community_filter) > 0) {
+    #   filter_expr_community <- sapply(input$community_filter, function(community_filter) {
+    #     grepl(community_filter, filtered_data$location, ignore.case = TRUE)
+    #   })
+    #   filtered_data <- filtered_data %>%
+    #     filter(rowSums(filter_expr_community) > 0)
+    # }
+    # 
     if (!is.null(input$community_filter) && length(input$community_filter) > 0) {
-      filter_expr_community <- sapply(input$community_filter, function(community_filter) {
-        grepl(community_filter, filtered_data$community, ignore.case = TRUE)
-      })
+      filter_expr_community <- do.call(cbind, lapply(input$community_filter, function(community_filter) {
+        grepl(community_filter, filtered_data$rurality, ignore.case = TRUE)
+      }))
       filtered_data <- filtered_data %>%
         filter(rowSums(filter_expr_community) > 0)
     }
     
     # Filter by school type
+    # if (!is.null(input$school_filter) && length(input$school_filter) > 0) {
+    #   filter_expr_school <- sapply(input$school_filter, function(school_filter) {
+    #     grepl(school_filter, filtered_data$school_type, ignore.case = TRUE)
+    #   })
+    #   filtered_data <- filtered_data %>%
+    #     filter(rowSums(filter_expr_school) > 0)
+    # }
+    
     if (!is.null(input$school_filter) && length(input$school_filter) > 0) {
-      filter_expr_school <- sapply(input$school_filter, function(school_filter) {
-        grepl(school_filter, filtered_data$school_level, ignore.case = TRUE)
-      })
+      filter_expr_school <- do.call(cbind, lapply(input$school_filter, function(school_filter) {
+        grepl(school_filter, filtered_data$school_type, ignore.case = TRUE)
+      }))
       filtered_data <- filtered_data %>%
         filter(rowSums(filter_expr_school) > 0)
     }
     
     # Filter by grade level
+    # if (!is.null(input$grade_filter) && length(input$grade_filter) > 0) {
+    #   grade_filter_expr <- sapply(input$grade_filter, function(grade_filter) {
+    #     grepl(paste0("\\b", grade_filter, "\\b"), filtered_data$grade_level, ignore.case = TRUE)
+    #   })
+    #   filtered_data <- filtered_data %>%
+    #     filter(rowSums(grade_filter_expr) > 0)
+    # }
+    
+    # Filter by grade level
     if (!is.null(input$grade_filter) && length(input$grade_filter) > 0) {
-      grade_filter_expr <- sapply(input$grade_filter, function(grade_filter) {
+      grade_filter_expr <- do.call(cbind, lapply(input$grade_filter, function(grade_filter) {
         grepl(paste0("\\b", grade_filter, "\\b"), filtered_data$grade_level, ignore.case = TRUE)
-      })
+      }))
       filtered_data <- filtered_data %>%
         filter(rowSums(grade_filter_expr) > 0)
     }
     
-    # Filter by evidence
-    if (!is.null(input$evidence_filter) && length(input$evidence_filter) > 0) {
-      filter_expr_evidence <- sapply(input$evidence_filter, function(evidence_filter) {
-        grepl(evidence_filter, filtered_data$evidence_domain, ignore.case = TRUE)
-      })
-      filtered_data <- filtered_data %>%
-        filter(rowSums(filter_expr_evidence) > 0)
-    }
     
+   # Filter by effectiveness
     # Filter by effectiveness
     if (!is.null(input$effectiveness_filter) && length(input$effectiveness_filter) > 0) {
-      filter_expr_effectiveness <- sapply(input$effectiveness_filter, function(effectiveness_filter) {
-        grepl(effectiveness_filter, filtered_data$effectiveness, ignore.case = TRUE)
-      })
+      filter_expr_effectiveness <- do.call(cbind, lapply(input$effectiveness_filter, function(effectiveness_filter) {
+        grepl(effectiveness_filter, filtered_data$outcome_domain_studied, ignore.case = TRUE)
+      }))
       filtered_data <- filtered_data %>%
         filter(rowSums(filter_expr_effectiveness) > 0)
     }
+
+   
+
+
     
-    # Filter by equity
-    if (!is.null(input$equity_filter) && length(input$equity_filter) > 0) {
-      filter_expr_equity <- sapply(input$equity_filter, function(equity_filter) {
-        grepl(equity_filter, filtered_data$equity, ignore.case = TRUE)
-      })
+    # Filter by fifth day 
+    # if (!is.null(input$fifthday_filter) && length(input$fifthday_filter) > 0) {
+    #   filter_expr_fifthday <- sapply(input$fifthday_filter, function(fifthday_filter) {
+    #     grepl(fifthday_filter, filtered_data$fifth_day_activities, fixed = TRUE)
+    #   })
+    #   filtered_data <- filtered_data %>%
+    #     filter(rowSums(filter_expr_fifthday) > 0)
+    # }
+    
+    if (!is.null(input$fifthday_filter) && length(input$fifthday_filter) > 0) {
+      filter_expr_fifthday <- do.call(cbind, lapply(input$fifthday_filter, function(fifthday_filter) {
+        grepl(fifthday_filter, filtered_data$fifth_day_activities, ignore.case = TRUE)
+      }))
       filtered_data <- filtered_data %>%
-        filter(rowSums(filter_expr_equity) > 0)
+        filter(rowSums(filter_expr_fifthday) > 0)
     }
 
+
+    # # Filter by race/ethnicity
+    if (!is.null(input$race_filter) && length(input$race_filter) > 0) {
+      # Create an empty logical vector of the same length as the data
+      filter_expr_race <- logical(nrow(filtered_data))
+
+      # Loop through each filter term and combine the results using OR
+      for (race_filter in input$race_filter) {
+        filter_expr_race <- filter_expr_race | grepl(race_filter, filtered_data$`Student Race/Ethnicity`, ignore.case = TRUE)
+      }
+
+      # Apply the combined filter
+      filtered_data <- filtered_data %>%
+        filter(filter_expr_race)
+
+      # Check if there is no data after filtering (IS THIS CAUSING ERROR??)
+      # if (nrow(filtered_data) == 0) {
+      #   return("No data matches the selected race/ethnicity filters.")
+      # }
+    }
+
+    
+ 
     return(filtered_data)
   })
   
@@ -283,28 +562,217 @@ server <- function(input, output, session) {
   # Render the filtered dataset as a table and specify column names
   output$datatable <- DT::renderDataTable({
     filtered_data <- filtered_dataset()
-    colnames(filtered_data) <- cap_names
-    
-    datatable(filtered_data, 
-              escape = FALSE,
-              rownames = FALSE,
-              options = list(
-                dom = 'lBfrtipC',
-                columnDefs = list(list(width = "1000px", targets = "Title")),
-                pageLength = 20)) %>% 
-      formatStyle("Title", width = "1000px")
-  })
 
-  observeEvent(input$reset, {
-    updateSelectizeInput(session, "state_filter", selected = character(0))
+
+    if (nrow(filtered_data) > 0) {
+      colnames(filtered_data) <- cap_names
+      datatable(filtered_data, 
+                escape = FALSE,
+                rownames = FALSE,
+                options = list(
+                  dom = 'lBfrtipC',
+                  columnDefs = list(list(width = "1000px", targets = "Title")),
+                  pageLength = 20
+                )) %>% 
+        formatStyle("Publication Year", cursor = "pointer", `data-toggle` = "tooltip", title = "Description")
+    } else {
+      # Handle the case when filtered_data is empty
+      empty_data <- as.data.frame(matrix(NA, nrow = 0, ncol = ncol(filtered_data)))
+      colnames(empty_data) <- colnames(filtered_data)
+      colnames(empty_data) <- cap_names
+      datatable(empty_data, options = list(
+        language = list(
+          emptyTable = "No data matches your filters."
+        )
+      ))
+    }
+  })
+  
+  
+  
+  observeEvent(input$resetFilters, {
     updateSelectizeInput(session, "community_filter", selected = character(0))
     updateSelectizeInput(session, "school_filter", selected = character(0))
     updateSelectizeInput(session, "grade_filter", selected = character(0))
-    updateSelectizeInput(session, "evidence_filter", selected = character(0))
     updateSelectizeInput(session, "effectiveness_filter", selected = character(0))
-    updateSelectizeInput(session, "equity_filter", selected = character(0))
+    updateSelectizeInput(session, "fifthday_filter", selected = character(0))
+    updateSelectizeInput(session, "race_filter", selected = character(0))
+    selected_states(character(0))  # Reset selected states
+    output$us_map <- renderPlotly({ #Reset Map
+      base_map
+    })
   })
+  
+
+  # Render the summary statistics table in the "Summary Statistics" tab
+  output$summary_stats_table <- renderUI({
+    #filtered data to use filters 
+    filtered_data <- filtered_dataset()
+    #colnames(filtered_data) <- cap_names
+   
+     if (nrow(filtered_data) > 0) {
+      colnames(filtered_data) <- cap_names
+      
+    
+    grade_text_table <- filtered_data %>%
+      mutate(`Grade Level` = str_remove_all(`Grade Level`, "; -999|-999; ")) %>%
+      separate_rows(`Grade Level`, sep = "; ") %>%
+      mutate(`Grade Level` = case_when(`Grade Level` == "K"  ~ "Kindergarten",
+                                     `Grade Level` == "1"  ~ "1st Grade",
+                                     `Grade Level` == "2"  ~ "2nd Grade",
+                                     `Grade Level` == "3"  ~ "3rd Grade",
+                                     `Grade Level` == "4"  ~ "4th Grade",
+                                     `Grade Level` == "5"  ~ "5th Grade",
+                                     `Grade Level` == "6"  ~ "6th Grade",
+                                     `Grade Level` == "7"  ~ "7th Grade",
+                                     `Grade Level` == "8"  ~ "8th Grade",
+                                     `Grade Level` == "9"  ~ "9th Grade",
+                                     `Grade Level` == "10" ~ "10th Grade",
+                                     `Grade Level` == "11" ~ "11th Grade",
+                                     `Grade Level` == "12" ~ "12th Grade",
+                                     TRUE ~ `Grade Level`)) %>% 
+      count(`Grade Level`) %>%
+      mutate(
+        `Grade Level` = ifelse(`Grade Level` == "-999", "Not Reported", `Grade Level`),
+        percent = paste0(round(n / nrow(td) * 100, 2), "%")
+      ) %>%
+      arrange(desc(`Grade Level` != "Not Reported"), desc(n))
+  grade_text_table_render <- renderTable(grade_text_table)
+    
+    # 
+    # school_table <- filtered_data %>%
+    #   mutate(`School Type` = str_remove_all(`School Type`, "; -999|-999; ")) %>%
+    #   separate_rows(`School Type`, sep = "; ") %>%
+    #   count(`School Type`) %>%
+    #   mutate(
+    #     `School Type` = ifelse(`School Type` == "-999", "Not Reported", `School Type`),
+    #     percent = paste0(round(n / nrow(td) * 100, 2), "%")
+    #   ) %>%
+    #   arrange(desc(`School Type` != "Not Reported"), desc(n))
+    # 
+    # design_table <- filtered_data %>%
+    #   mutate(`Study Design` = str_remove_all(`Study Design`, "; -999|-999; ")) %>%
+    #   separate_rows(`Study Design`, sep = "; ") %>%
+    #   count(`Study Design`) %>%
+    #   mutate(
+    #     `Study Design` = ifelse(`Study Design` == "-999", "Not Reported", `Study Design`),
+    #     percent = paste0(round(n / nrow(td) * 100, 2), "%")
+    #   ) %>%
+    #   arrange(desc(`Study Design` != "Not Reported"), desc(n))
+    
+    
+    # function to create summary tables
+    process_summary_tables <- function(var_name, data) {
+      result <- data %>%
+        mutate_at(vars(all_of(var_name)), list(~str_remove_all(.,"; -999|-999; "))) %>%
+        separate_rows(all_of(var_name), sep = "; ") %>%
+        count(!!sym(var_name)) %>%
+        mutate(
+          !!var_name := ifelse(!!sym(var_name) == "-999", "Not Reported", !!sym(var_name)),
+          percent = paste0(round(n / nrow(data) * 100, 2), "%")
+        ) %>%
+        arrange(desc(!!sym(var_name) != "Not Reported"), desc(n))
+      
+      return(result)
+    }
+    
+    
+    # List of variables
+    vars_list <- c("Rurality", "School Type", "Grade Level", "Student Race/Ethnicity", 
+                   "Fifth Day Activities", "Study Design", "Outcome Domain Studied", 
+                   "Equity Domain Studied", "Publication Type")
+    
+    # Use lapply to process data for each variable
+    tables_list <- lapply(vars_list, process_summary_tables, data = filtered_data)
+    
+    #render tables with concise formatting 
+    rendered_tables_list <- lapply(tables_list, function(tbl) {
+      renderTable(tbl)
+    })
+    
+    
+    # community_table_html <- renderTable(community_table)
+    # design_table_html <- renderTable(design_table)
+    # school_table_html <- renderTable(school_table)
+    # test_table <- renderTable(tables_list[[1]])
+    
+    #show tables in two columns (with css code)
+    div(
+      class = "table-container",
+      div(class = "table",
+          h3("Rurality Table"), 
+          rendered_tables_list[[1]]
+      ),
+      div(class = "table",
+          h3("School Type Table"), 
+          rendered_tables_list[[2]]
+      ), 
+      div(class = "table",
+          h3("Race/Ethnicity Table"), 
+          rendered_tables_list[[4]]
+      ),
+      div(class = "table",
+          h3("Grade Level Table"), 
+          grade_text_table_render
+      ),
+      div(class = "table",
+          h3("Fifth Day Activities Table"), 
+          rendered_tables_list[[5]]
+      ),
+      div(class = "table",
+          h3("Study Design Table"), 
+          rendered_tables_list[[6]]
+      ),
+      div(class = "table",
+          h3("Outcome Domain Table"), 
+          rendered_tables_list[[7]]
+      ),
+      div(class = "table",
+          h3("Equity Domain Table"), 
+          rendered_tables_list[[8]]
+      ),
+      div(class = "table",
+          h3("Publication Type Table"), 
+          rendered_tables_list[[9]]
+      ),
+    )
+    
+     } else {
+       # Display a message when there are no matching results
+       div(
+         p("No data matches your filters."),
+         style = "text-align: center; font-size: 16px; margin-top: 10px; font-weight: bold;"
+       )
+     }
+    
+    
+ 
+  })
+  
+  output$downloadData <- downloadHandler(
+    filename = "4dsw_data.xlsx",
+    content = function(file) {
+      write.xlsx(cleaned_df_to_export, file)  # all data
+    }
+  )
+  
+  output$downloadFilteredData <- downloadHandler(
+    filename = "4dsw_filtered_data.csv",
+    content = function(file) {
+      write.xlsx(filtered_dataset(), file)  # filtered data
+    }
+  )
+  
 }
+  
+
+  
+  
 
 shinyApp(ui, server)
+
+###TODO
+#MAKE TITLE COLUMN WIDER
+
+#add description/notes section - and note that at the top to state if no email there is no link for author. Same for title links - no public full text link
 
