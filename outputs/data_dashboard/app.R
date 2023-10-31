@@ -175,7 +175,7 @@ ui <- fluidPage(
       selectizeInput("race_filter", "Student Race/Ethnicity:", choices = race_ethnicity_choices, multiple = TRUE),
       style = "display:inline-block; width:25%;"
     )
-    ),
+   ),
     
   fluidRow(
     div(
@@ -194,40 +194,17 @@ ui <- fluidPage(
     fluidRow(div(
       actionButton("resetFilters", "Reset Filters", class = "reset-button"),
       style = "padding-left: 30px;"))
-    
-
-    
-  ),
+    ),
  
   # Instructions
   div("Step 3 - Results that meet your criteria are below:", 
       style = "text-align: left; font-size: 16px; margin-top: 10px; padding-left: 10px; margin-bottom: 5px; color: #007030; font-weight: bold;"),
  
  
-  # TabsetPanel for Data Table and Summary Statistics
-  # tabsetPanel(
-  #   type = "tabs",
-  #   tabPanel("Data Table",
-  #            # Show table
-  #            mainPanel(h2("Empirical Studies"),
-  #                      p("All research studies meeting your criteria:"),
-  #              DTOutput("datatable"),
-  #              downloadButton("downloadData", "Download All Data")
-  #            )
-  #   ),
-  #   tabPanel("Summary Statistics",
-  #            h2("Summary Statistics"),
-  #            p("Frequency tables of studies meeting your criteria:"),
-  #            uiOutput("summary_stats_table")
-  #   )
-  #   
-  #   
-  #  
-  #   ),
+  # TabsetPanel data table, summary statistics, and glossary
  tabsetPanel(
    type = "tabs",
    tabPanel("Data Table",
-            # Show table
             mainPanel(
               h2("Empirical Studies", style = "display: inline-block; margin-right: 20px;"),
               div(style = "display: flex; justify-content: space-between; align-items: center; ", 
@@ -374,7 +351,7 @@ server <- function(input, output, session) {
 
 
 
-    # Register the 'plotly_click' event
+    # Register the 'plotly_click' event on map
     event_register(base_map, 'plotly_click')
 
 
@@ -432,31 +409,18 @@ server <- function(input, output, session) {
   })
   
 
-
-
-  
-  
    # Create a reactive filtered dataset based on user selections
   filtered_dataset <- reactive({
     filtered_data <- td
     
-    # Filter by selected states (FILTER WHEN MULTIPLE = OR)
-    #if (length(selected_states()) > 0) {
+    # Filter by selected states 
     if (!is.null(selected_states()) && length(selected_states()) > 0) {
       selected_states_regex <- paste(selected_states(), collapse = "|")
       filtered_data <- filtered_data %>%
         filter(grepl(selected_states_regex, state, ignore.case = TRUE))
     }
     
-    # Filter by community
-    # if (!is.null(input$community_filter) && length(input$community_filter) > 0) {
-    #   filter_expr_community <- sapply(input$community_filter, function(community_filter) {
-    #     grepl(community_filter, filtered_data$location, ignore.case = TRUE)
-    #   })
-    #   filtered_data <- filtered_data %>%
-    #     filter(rowSums(filter_expr_community) > 0)
-    # }
-    # 
+
     if (!is.null(input$community_filter) && length(input$community_filter) > 0) {
       filter_expr_community <- do.call(cbind, lapply(input$community_filter, function(community_filter) {
         grepl(community_filter, filtered_data$rurality, ignore.case = TRUE)
@@ -465,15 +429,7 @@ server <- function(input, output, session) {
         filter(rowSums(filter_expr_community) > 0)
     }
     
-    # Filter by school type
-    # if (!is.null(input$school_filter) && length(input$school_filter) > 0) {
-    #   filter_expr_school <- sapply(input$school_filter, function(school_filter) {
-    #     grepl(school_filter, filtered_data$school_type, ignore.case = TRUE)
-    #   })
-    #   filtered_data <- filtered_data %>%
-    #     filter(rowSums(filter_expr_school) > 0)
-    # }
-    
+
     if (!is.null(input$school_filter) && length(input$school_filter) > 0) {
       filter_expr_school <- do.call(cbind, lapply(input$school_filter, function(school_filter) {
         grepl(school_filter, filtered_data$school_type, ignore.case = TRUE)
@@ -482,15 +438,7 @@ server <- function(input, output, session) {
         filter(rowSums(filter_expr_school) > 0)
     }
     
-    # Filter by grade level
-    # if (!is.null(input$grade_filter) && length(input$grade_filter) > 0) {
-    #   grade_filter_expr <- sapply(input$grade_filter, function(grade_filter) {
-    #     grepl(paste0("\\b", grade_filter, "\\b"), filtered_data$grade_level, ignore.case = TRUE)
-    #   })
-    #   filtered_data <- filtered_data %>%
-    #     filter(rowSums(grade_filter_expr) > 0)
-    # }
-    
+
     # Filter by grade level
     if (!is.null(input$grade_filter) && length(input$grade_filter) > 0) {
       grade_filter_expr <- do.call(cbind, lapply(input$grade_filter, function(grade_filter) {
@@ -501,7 +449,6 @@ server <- function(input, output, session) {
     }
     
     
-   # Filter by effectiveness
     # Filter by effectiveness
     if (!is.null(input$effectiveness_filter) && length(input$effectiveness_filter) > 0) {
       filter_expr_effectiveness <- do.call(cbind, lapply(input$effectiveness_filter, function(effectiveness_filter) {
@@ -511,19 +458,6 @@ server <- function(input, output, session) {
         filter(rowSums(filter_expr_effectiveness) > 0)
     }
 
-   
-
-
-    
-    # Filter by fifth day 
-    # if (!is.null(input$fifthday_filter) && length(input$fifthday_filter) > 0) {
-    #   filter_expr_fifthday <- sapply(input$fifthday_filter, function(fifthday_filter) {
-    #     grepl(fifthday_filter, filtered_data$fifth_day_activities, fixed = TRUE)
-    #   })
-    #   filtered_data <- filtered_data %>%
-    #     filter(rowSums(filter_expr_fifthday) > 0)
-    # }
-    
     if (!is.null(input$fifthday_filter) && length(input$fifthday_filter) > 0) {
       filter_expr_fifthday <- do.call(cbind, lapply(input$fifthday_filter, function(fifthday_filter) {
         grepl(fifthday_filter, filtered_data$fifth_day_activities, ignore.case = TRUE)
@@ -547,10 +481,6 @@ server <- function(input, output, session) {
       filtered_data <- filtered_data %>%
         filter(filter_expr_race)
 
-      # Check if there is no data after filtering (IS THIS CAUSING ERROR??)
-      # if (nrow(filtered_data) == 0) {
-      #   return("No data matches the selected race/ethnicity filters.")
-      # }
     }
 
     
@@ -639,28 +569,7 @@ server <- function(input, output, session) {
       arrange(desc(`Grade Level` != "Not Reported"), desc(n))
   grade_text_table_render <- renderTable(grade_text_table)
     
-    # 
-    # school_table <- filtered_data %>%
-    #   mutate(`School Type` = str_remove_all(`School Type`, "; -999|-999; ")) %>%
-    #   separate_rows(`School Type`, sep = "; ") %>%
-    #   count(`School Type`) %>%
-    #   mutate(
-    #     `School Type` = ifelse(`School Type` == "-999", "Not Reported", `School Type`),
-    #     percent = paste0(round(n / nrow(td) * 100, 2), "%")
-    #   ) %>%
-    #   arrange(desc(`School Type` != "Not Reported"), desc(n))
-    # 
-    # design_table <- filtered_data %>%
-    #   mutate(`Study Design` = str_remove_all(`Study Design`, "; -999|-999; ")) %>%
-    #   separate_rows(`Study Design`, sep = "; ") %>%
-    #   count(`Study Design`) %>%
-    #   mutate(
-    #     `Study Design` = ifelse(`Study Design` == "-999", "Not Reported", `Study Design`),
-    #     percent = paste0(round(n / nrow(td) * 100, 2), "%")
-    #   ) %>%
-    #   arrange(desc(`Study Design` != "Not Reported"), desc(n))
-    
-    
+   
     # function to create summary tables
     process_summary_tables <- function(var_name, data) {
       result <- data %>%
@@ -691,11 +600,7 @@ server <- function(input, output, session) {
     })
     
     
-    # community_table_html <- renderTable(community_table)
-    # design_table_html <- renderTable(design_table)
-    # school_table_html <- renderTable(school_table)
-    # test_table <- renderTable(tables_list[[1]])
-    
+
     #show tables in two columns (with css code)
     div(
       class = "table-container",
@@ -749,6 +654,8 @@ server <- function(input, output, session) {
  
   })
   
+  #download buttons
+  
   output$downloadData <- downloadHandler(
     filename = "4dsw_data.xlsx",
     content = function(file) {
@@ -770,9 +677,3 @@ server <- function(input, output, session) {
   
 
 shinyApp(ui, server)
-
-###TODO
-#MAKE TITLE COLUMN WIDER
-
-#add description/notes section - and note that at the top to state if no email there is no link for author. Same for title links - no public full text link
-
