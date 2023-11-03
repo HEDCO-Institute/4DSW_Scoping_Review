@@ -10,16 +10,13 @@ bibliography: [book.bib, packages.bib]
 description: |
   This is the technical report for the HEDCO Institute for Evidence-Based Educational Practice's Four-Day School Week Scoping Review project.
 link-citations: yes
-# output:
+# output: 
 #   bookdown::html_book:
 #       css: style.css
 #github-repo: rstudio/bookdown-demo
 ---
 
-```{r setup, include = FALSE}
-knitr::opts_chunk$set(number_sections = FALSE, include = FALSE)
 
-```
 
 <div style="text-align: center;">
 
@@ -50,19 +47,7 @@ College of Education, University of Oregon
 Correspondence should be addressed to the study guarantor: Sean Grant, HEDCO Institute for Evidence-Based Educational Practice, HEDCO Education Building, 365 6247, Eugene, OR 97403-6247, United States. Email: [spgrant@uoregon.edu](mailto:spgrant@uoregon.edu)
 
 
-```{r, eval=FALSE, include = FALSE}
-#RENDER BOOK
-bookdown::render_book(here::here("outputs", "technical_report"))
-
-#bookdown::render_book(here::here("outputs", "technical_report"), output_dir = here::here("outputs", "technical_report", "_book"))
-
-#To render this example to PDF as a `bookdown::pdf_book`, you'll need to install XeLaTeX. You are recommended to install TinyTeX (which includes XeLaTeX): <https://yihui.org/tinytex/>.
 
 
-```
 
-```{r eval=FALSE, include = FALSE}
-#PREVIEW ON LOCAL SERVER WHILE WORKING
-bookdown::serve_book(here::here("outputs", "technical_report"))
-```
 

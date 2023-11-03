@@ -1,5 +1,5 @@
 delete_merged_file: true
-output_dir: "../docs/technical_report"
+output_dir: "../../docs/technical_report"
 new_session: yes
 output: 
   bookdown::html_book:
