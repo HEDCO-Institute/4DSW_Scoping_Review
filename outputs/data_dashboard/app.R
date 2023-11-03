@@ -20,11 +20,10 @@ cleaned_df_to_export <- cleaned_df %>%
                                   study_design == "MANOVA" ~ "Between Groups - Without Controls", 
                                   study_design == "Mann-Whitney U test" ~ "Between Groups - Without Controls", 
                                   study_design == "T-Test" ~ "Between Groups - Without Controls", 
-                                  study_design == "" ~ "Between Groups - Without Controls", 
                                   study_design == "No" ~ "Not Reported",
                                   TRUE ~ study_design)) %>% 
   select(publication_year, title, corr_author_name, data_years, rurality, school_type, grade_level, `Student Race/Ethnicity`,
-         state, fifth_day_activities, study_design, outcome_domain_studied, equity_domain_studied, evidence_domain,
+         state, fifth_day_activities, study_design, outcome_domain_studied, equity_domain_studied, #evidence_domain,
          publication_type, publisher, citation, link, author_link)
   
 
@@ -34,8 +33,10 @@ td <- cleaned_df %>%
          corresponding_author = ifelse(author_link != "Not Reported", paste0("<a href='", author_link, "' target='_blank'>", corr_author_name, "</a>"), corr_author_name),
          publication_year = as.numeric(publication_year)) %>% 
   arrange(desc(publication_year), title) %>% 
-  select(-title) %>% 
-  rename(title = linked_title,
+  rename(title_text = title, 
+         author_text = corr_author_name,
+         title_link = link,
+         title = linked_title,
          study_design = effectiveness_approach,
          outcome_domain_studied = effectiveness,
          equity_domain_studied = equity,
@@ -48,19 +49,18 @@ td <- cleaned_df %>%
                                   study_design == "MANOVA" ~ "Between Groups - Without Controls", 
                                   study_design == "Mann-Whitney U test" ~ "Between Groups - Without Controls", 
                                   study_design == "T-Test" ~ "Between Groups - Without Controls", 
-                                  study_design == "" ~ "Between Groups - Without Controls", 
                                   study_design == "No" ~ "Not Reported",
                                   TRUE ~ study_design)) %>% 
   select(publication_year, title, corresponding_author, data_years, rurality, school_type, grade_level, `Student Race/Ethnicity`,
          state, fifth_day_activities, study_design, outcome_domain_studied, equity_domain_studied, #evidence_domain, #INTERNAL ONLY
-         publication_type) #, publisher, citation) #INTERNAL ONLY
+         publication_type, citation, title_text, author_text, title_link, author_link) #, publisher, citation) #INTERNAL ONLY
 
 
 #define filter choices
 states <- state.abb
 grades <- c("K", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12")
-effect_choices <- c("Approach", "Achievement", "Attainment", "Attendance", "Crime", "Health", "Housing",
-                    "Incidents", "Retention")
+effect_choices <- c("Approach", "Achievement", "Attainment", "Attendance", "Crime", "Climate", 
+                    "Health", "Households", "Incidents", "Retention")
 fifthday_choices <- c("Extracurriculars (clubs/sports)", "Student Instruction", "Teacher In-Service",
                       "Nothing (shut down school)", "Child Care", "Field/Educational Trips")
 race_ethnicity_choices <- c("American Indian and/or Alaska Native", "Asian", "Black or African American",
@@ -78,7 +78,7 @@ capitalize_colnames <- function(df) {
   return(unlist(new_names))
 }
 #extract cleaned column names
-cap_names <- capitalize_colnames(td)
+#cap_names <- capitalize_colnames(td)
 
 
 # Define UI for application that will show table
@@ -159,13 +159,15 @@ ui <- fluidPage(
   
   # Instructions
   div("Step 2 - Select any additional filters:", 
-      style = "text-align: left; font-size: 16px; margin-top: 10px; margin-bottom: 5px; padding-left: 10px; color: #007030; font-weight: bold;"),
+      style = "text-align: left; font-size: 16px; margin-top: 10px; padding-left: 10px; color: #007030; font-weight: bold;"),
+  div("Tip: Filters will show all studies that include, but are not limited to, your selected filter(s). ", 
+      style = "text-align: left; font-size: 12px; margin-top: 2px; padding-left: 10px; margin-bottom: 5px;"),
   
  # Top panel with div and filters
   fluidRow(
     div(
       selectizeInput("community_filter", "Rurality:", choices = c("Rural", "Suburban", "Urban"), multiple = TRUE),
-      style = "display:inline-block; width:25%; margin-left: 25px"
+      style = "display:inline-block; width:25%; margin-left: 25px;"
     ),
     div(
       selectizeInput("school_filter", "School Type:", choices = c("Elementary", "Middle", "High"), multiple = TRUE),
@@ -180,7 +182,7 @@ ui <- fluidPage(
   fluidRow(
     div(
       selectizeInput("grade_filter", "Grade:", choices = grades, multiple = TRUE),
-      style = "display:inline-block; width:25%; margin-left: 25px"
+      style = "display:inline-block; width:25%; margin-left: 25px;"
     ),
     div(
       selectizeInput("fifthday_filter", "Fifth Day Activity:", choices = fifthday_choices, multiple = TRUE),
@@ -206,9 +208,9 @@ ui <- fluidPage(
    type = "tabs",
    tabPanel("Data Table",
             mainPanel(
-              h2("Empirical Studies", style = "display: inline-block; margin-right: 20px;"),
+              h2("Research Articles", style = "display: inline-block; margin-right: 20px;"),
               div(style = "display: flex; justify-content: space-between; align-items: center; ", 
-                  p("All research studies meeting your criteria:"),
+                  p("All studies meeting your criteria:"),
                   div(
                     downloadButton("downloadData", "Download All Data", style = "display: inline-block; margin-right: 10px; margin-bottom: 5px; margin-left: 10px;"),
                     downloadButton("downloadFilteredData", "Download Filtered Data", style = "display: inline-block; margin-bottom: 5px; margin-left: 10px;")
@@ -495,7 +497,10 @@ server <- function(input, output, session) {
 
 
     if (nrow(filtered_data) > 0) {
-      colnames(filtered_data) <- cap_names
+      filtered_data <- filtered_data %>% 
+        select(-author_text, -title_text, -author_link, -title_link, -citation)
+      
+      colnames(filtered_data) <- capitalize_colnames(filtered_data)
       datatable(filtered_data, 
                 escape = FALSE,
                 rownames = FALSE,
@@ -509,7 +514,7 @@ server <- function(input, output, session) {
       # Handle the case when filtered_data is empty
       empty_data <- as.data.frame(matrix(NA, nrow = 0, ncol = ncol(filtered_data)))
       colnames(empty_data) <- colnames(filtered_data)
-      colnames(empty_data) <- cap_names
+      colnames(empty_data) <- capitalize_colnames(filtered_data)
       datatable(empty_data, options = list(
         language = list(
           emptyTable = "No data matches your filters."
@@ -538,10 +543,10 @@ server <- function(input, output, session) {
   output$summary_stats_table <- renderUI({
     #filtered data to use filters 
     filtered_data <- filtered_dataset()
-    #colnames(filtered_data) <- cap_names
+    
    
      if (nrow(filtered_data) > 0) {
-      colnames(filtered_data) <- cap_names
+      colnames(filtered_data) <- capitalize_colnames(filtered_data)
       
     
     grade_text_table <- filtered_data %>%
@@ -663,10 +668,31 @@ server <- function(input, output, session) {
     }
   )
   
+  # output$downloadFilteredData <- downloadHandler(
+  #   filename = "4dsw_filtered_data.xlsx",
+  #   content = function(file) {
+  #     filtered_data_export <- filtered_dataset() %>% 
+  #     mutate(title_text = str_extract(title, "(?<=>)[^<]+"))
+  #     
+  #     colnames(filtered_data_export) <- cap_names
+  #     
+  #     write.xlsx(filtered_data_export, file)  # filtered data
+  #   }
+  # )
+  
   output$downloadFilteredData <- downloadHandler(
-    filename = "4dsw_filtered_data.csv",
+    filename = "4dsw_filtered_data.xlsx",
     content = function(file) {
-      write.xlsx(filtered_dataset(), file)  # filtered data
+      filtered_data <- filtered_dataset() 
+      
+      filtered_data_export <- filtered_data %>% 
+        select(-corresponding_author, -title) %>% 
+        rename(title = title_text,
+               corr_author_name = author_text,
+               link = title_link) %>% 
+        select(publication_year, title, corr_author_name, everything())
+      
+      write.xlsx(filtered_data_export, file)  # Write the filtered data
     }
   )
   
