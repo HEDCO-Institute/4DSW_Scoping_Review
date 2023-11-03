@@ -1,0 +1,21 @@
+# Tables
+
+```{r tab_path, include = FALSE}
+t1_path <- here::here("outputs", "technical_report", "images", "table1_eligibility.png")
+
+t2_path <- here::here("outputs", "technical_report", "images", "table2_characteristics.png")
+
+t3_path <- here::here("outputs", "technical_report", "images", "table3_research.png")
+```
+
+## Table 1. Eligibility criteria for including and escluding studies in the scoping review
+
+![](`r t1_path` "Table 1")
+
+## Table 2. Characteristics of included sources of evidence on the four-day school week
+
+![](`r t2_path` "Table 2")
+
+## Table 3. Types of available research evidence on the four-day school week
+
+![](`r t3_path` "Table 3")

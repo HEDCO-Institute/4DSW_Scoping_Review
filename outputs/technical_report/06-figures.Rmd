@@ -1,0 +1,17 @@
+# Figures
+
+```{r fig_path, include = FALSE}
+f1_path <- here::here("outputs", "technical_report", "images", "figure1_prisma.png")
+
+f2_path <- here::here("outputs", "technical_report", "images", "figure2_stateviz.png")
+```
+
+
+## Figure 1. Flow diagram for selection of sources of evidence
+
+![](`r f1_path` "Figure 1")
+
+## Figure 2. Number of studies done with populations in each state
+
+![](`r f2_path` "Figure 2")
+

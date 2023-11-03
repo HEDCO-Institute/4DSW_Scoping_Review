@@ -1,0 +1,9 @@
+delete_merged_file: true
+output_dir: "../docs/technical_report"
+new_session: yes
+output: 
+  bookdown::html_book:
+    theme: paper
+# language:
+#   ui:
+#     chapter_name: "Chapter "
