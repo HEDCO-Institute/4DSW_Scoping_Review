@@ -1,18 +1,14 @@
 --- 
-title: "Four-Day School Week Scoping Review"
+title: "<span style='visibility: hidden;'>Four-Day School Week Scoping Review</span>"
 bookdown: 
   affiliation: "HEDCO Institute for Evidence-Based Educational Practice, College of Education, University of Oregon"
 site: bookdown::bookdown_site
 documentclass: book
-bibliography: [book.bib, packages.bib]
+#bibliography: [book.bib, packages.bib]
 # url: your book url like https://bookdown.org/yihui/bookdown
-# cover-image: path to the social sharing image like images/cover.jpg
 description: |
-  This is the technical report for the HEDCO Institute for Evidence-Based Educational Practice's Four-Day School Week Scoping Review project.
+  Technical report for the HEDCO Institute for Evidence-Based Educational Practice's Four-Day School Week Scoping Review.
 link-citations: yes
-# output: 
-#   bookdown::html_book:
-#       css: style.css
 #github-repo: rstudio/bookdown-demo
 ---
 
