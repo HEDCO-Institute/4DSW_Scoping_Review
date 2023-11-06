@@ -85,15 +85,14 @@ fif_df <- import(here("data", "4dsw_fifthday.xlsx")) %>%
 
 #transform fifth day data for table
 fif_td <- fif_df %>% 
-  mutate(fifth_day_recode_extracuriculars_clubs_sports = ifelse(fifth_day_recode_extracuriculars_clubs_sports == "Extracuriculars (clubs, sports)",
-                                                                "Extracurriculars (clubs/sports)",
-                                                                fifth_day_recode_extracuriculars_clubs_sports))  %>% 
-  pivot_longer(cols = fifth_day_recode_child_care:fifth_day_recode_field_trips_educational_trips, 
+ # mutate(fifth_day_recode_extracuriculars_clubs_sports = ifelse(fifth_day_recode_extracuriculars_clubs_sports == "Extracuriculars (clubs, sports)",
+  #                                                              "Extracurriculars (clubs/sports)",
+   #                                                             fifth_day_recode_extracuriculars_clubs_sports))  %>% 
+  pivot_longer(cols = fifth_day_recode_child_care:fifth_day_recode_not_reported, 
                names_to = "variable", 
                values_to = "response") %>% 
   mutate(response = str_replace_all(response, 
-                                    c("Not reported" = "Not Reported", 
-                                      "field trips/ educational trips" = "Field/Educational Trips"))) %>% 
+                                    c("Not reported" = "Not Reported"))) %>% 
   group_by(refid) %>%
   summarise(fifth_day_activities = paste(response[!is.na(response)], collapse = "; "), .groups = "drop_last") %>%
   ungroup()

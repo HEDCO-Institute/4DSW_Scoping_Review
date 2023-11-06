@@ -7,13 +7,13 @@ pacman::p_load(tidyverse, rio, here, DT, shiny, plotly, openxlsx)
 #import cleaned data
 cleaned_df <- import(here("data", "4dsw_app_data.xlsx"))
 
-cleaned_df_to_export <- cleaned_df %>% 
+cleaned_dashboard_df <- cleaned_df %>% 
   rename(study_design = effectiveness_approach,
          outcome_domain_studied = effectiveness,
          equity_domain_studied = equity,
          `Student Race/Ethnicity` = race_ethnicity,
          school_type = school_level,
-         rurality = community) %>% 
+         `Community Type (Rurality)` = community) %>% 
   mutate(study_design = case_when(study_design == "Hierarchical Linear Modeling" ~ "Between Groups - With Controls",
                                   study_design == "Regression Adjustment" ~ "Between Groups - With Controls",
                                   study_design == "ANOVA" ~ "Between Groups - Without Controls", 
@@ -22,13 +22,29 @@ cleaned_df_to_export <- cleaned_df %>%
                                   study_design == "T-Test" ~ "Between Groups - Without Controls", 
                                   study_design == "No" ~ "Not Reported",
                                   TRUE ~ study_design)) %>% 
-  select(publication_year, title, corr_author_name, data_years, rurality, school_type, grade_level, `Student Race/Ethnicity`,
+  mutate(study_design = ifelse(study_design == "Not Reported", "Not Applicable", study_design),
+         outcome_domain_studied = str_replace_all(outcome_domain_studied, c("Retention" = "Staff/Teacher Retention",
+                                                                            "Climate" = "School Climate",
+                                                                            "Incidents" = "School Disciplinary Incidents",
+                                                                            "Households" = "Household Impacts",
+                                                                            "Crime" = "Criminal Activity")),
+         equity_domain_studied = str_replace_all(equity_domain_studied, c("Age" = "Age or Grade Level",
+                                                                           "Rurality" = "Community Type (Rurality)",
+                                                                           "ELL" = "English Language Learner",
+                                                                           "Gifted" = "Gifted Student Status",
+                                                                           "Immigrant" = "Immigration Status",
+                                                                          "Not Reported" = "Not Reported or Applicable")))
+
+  
+
+cleaned_df_to_export <- cleaned_dashboard_df %>% 
+  select(publication_year, title, corr_author_name, data_years, `Community Type (Rurality)`, school_type, grade_level, `Student Race/Ethnicity`,
          state, fifth_day_activities, study_design, outcome_domain_studied, equity_domain_studied, #evidence_domain,
          publication_type, publisher, citation, link, author_link)
   
 
 #transform for data table
-td <- cleaned_df %>% 
+td <- cleaned_dashboard_df %>% 
   mutate(linked_title = ifelse(link != "Not Reported", paste0("<a href='", link, "' target='_blank'>", title, "</a>"), title),
          corresponding_author = ifelse(author_link != "Not Reported", paste0("<a href='", author_link, "' target='_blank'>", corr_author_name, "</a>"), corr_author_name),
          publication_year = as.numeric(publication_year)) %>% 
@@ -36,22 +52,8 @@ td <- cleaned_df %>%
   rename(title_text = title, 
          author_text = corr_author_name,
          title_link = link,
-         title = linked_title,
-         study_design = effectiveness_approach,
-         outcome_domain_studied = effectiveness,
-         equity_domain_studied = equity,
-         `Student Race/Ethnicity` = race_ethnicity,
-         school_type = school_level,
-         rurality = community) %>% 
-  mutate(study_design = case_when(study_design == "Hierarchical Linear Modeling" ~ "Between Groups - With Controls",
-                                  study_design == "Regression Adjustment" ~ "Between Groups - With Controls",
-                                  study_design == "ANOVA" ~ "Between Groups - Without Controls", 
-                                  study_design == "MANOVA" ~ "Between Groups - Without Controls", 
-                                  study_design == "Mann-Whitney U test" ~ "Between Groups - Without Controls", 
-                                  study_design == "T-Test" ~ "Between Groups - Without Controls", 
-                                  study_design == "No" ~ "Not Reported",
-                                  TRUE ~ study_design)) %>% 
-  select(publication_year, title, corresponding_author, data_years, rurality, school_type, grade_level, `Student Race/Ethnicity`,
+         title = linked_title) %>% 
+  select(publication_year, title, corresponding_author, data_years, `Community Type (Rurality)`, school_type, grade_level, `Student Race/Ethnicity`,
          state, fifth_day_activities, study_design, outcome_domain_studied, equity_domain_studied, #evidence_domain, #INTERNAL ONLY
          publication_type, citation, title_text, author_text, title_link, author_link) #, publisher, citation) #INTERNAL ONLY
 
@@ -59,10 +61,11 @@ td <- cleaned_df %>%
 #define filter choices
 states <- state.abb
 grades <- c("K", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12")
-effect_choices <- c("Approach", "Achievement", "Attainment", "Attendance", "Crime", "Climate", 
-                    "Health", "Households", "Incidents", "Retention")
-fifthday_choices <- c("Extracurriculars (clubs/sports)", "Student Instruction", "Teacher In-Service",
-                      "Nothing (shut down school)", "Child Care", "Field/Educational Trips")
+effect_choices <- c("Approach", "Achievement", "Attainment", "Attendance", "Criminal Activity", 
+                    "Health", "Household Impacts", "School Climate", 
+                     "School Disciplinary Incidents", "Staff/Teacher Retention")
+fifthday_choices <- c("Child Care", "Nothing (shut down school)",
+                      "Student Instruction", "Teacher In-Service")
 race_ethnicity_choices <- c("American Indian and/or Alaska Native", "Asian", "Black or African American",
                             "Hispanic, Latino, or Spanish", "Native Hawaiian/Other Pacific Islander",
                             "White", "Other")
@@ -166,7 +169,7 @@ ui <- fluidPage(
  # Top panel with div and filters
   fluidRow(
     div(
-      selectizeInput("community_filter", "Rurality:", choices = c("Rural", "Suburban", "Urban"), multiple = TRUE),
+      selectizeInput("community_filter", "Community Type (Rurality):", choices = c("Rural", "Suburban", "Urban"), multiple = TRUE),
       style = "display:inline-block; width:25%; margin-left: 25px;"
     ),
     div(
@@ -240,11 +243,11 @@ ui <- fluidPage(
             h4("Data Years:"),
             p("The years from which data originated."),
             
-            h4("Rurality:"),
-            p("School rurality status."),
+            h4("Community Type (Rurality):"),
+            p("Rural, Suburban, and/or Urban."),
             
             h4("School Type"),
-            p("Educational level of schools (e.g., Elementary)"),
+            p("Educational level of schools (e.g., Elementary)."),
             
             h4("Grade Level:"),
             p("Grade level of students."),
@@ -259,8 +262,8 @@ ui <- fluidPage(
             p("What researchers reported regarding what schools did during the fifth day of the week when classes were not formally in session."),
             
             tags$ul(
-              tags$li(HTML("<strong>Childcare:</strong> School-provided childcare")),
-              tags$li(HTML("<strong>School is closed:</strong> Schools that were not open to students on the fifth day")),
+              tags$li(HTML("<strong>Child care:</strong> School-provided childcare")),
+              tags$li(HTML("<strong>Nothing (shut down school):</strong> Schools that were not open to students on the fifth day")),
               tags$li(HTML("<strong>Student instruction:</strong> Schools that offered student instruction for at least one off-day per school year (full or partial day)")),
               tags$li(HTML("<strong>Teacher in-service:</strong> Schools that offered teacher in-service on at least one off-day per school year (full or partial day)"))
             ),
@@ -270,12 +273,11 @@ ui <- fluidPage(
             
             tags$ul(
               tags$li(HTML("<strong>Before-after study:</strong> Studies that test differences in outcomes before and after a school switches from a five-day to a four-day week")),
-              tags$li(HTML("<strong>Between-group – with controls:</strong> Studies that used Hierarchical linear modeling or regression adjustment, examining the relationship between four-day school weeks and outcomes interest while controlling for confounding variables")),
+              tags$li(HTML("<strong>Between-group – with controls:</strong> Studies that used multilevel regression or multiple linear regression to examine the relationship between four-day school weeks and outcomes interest while controlling for confounding variables.")),
               tags$li(HTML("<strong>Between-group – without controls:</strong> Studies that used ANOVA, MANOVA, Mann-Whitney U tests, or t-tests to test differences in outcomes between four-day school week and five-day school week outcomes without controlling for covariates")),
               tags$li(HTML("<strong>Computational model:</strong> Use of mathematical models and simulated data.")),
               tags$li(HTML("<strong>Descriptive statistics only:</strong> Studies that presented descriptive information and did not perform inferential statistical analyses")),
               tags$li(HTML("<strong>Difference-in-differences:</strong> Studies that analyze the difference in outcomes before and after a school switches to a four-day week compared to outcomes for schools that remained on a five-day week")),
-              tags$li(HTML("<strong>MANOVA:</strong> Studies that used Multivariate Analysis of Variance to test between-group differences for a composite outcome variable")),
               tags$li(HTML("<strong>Matched pair design:</strong> Studies that match samples based on characteristics such as demographic information, school location or school type before testing outcomes between four-day and five-day week schools."))
             ),
             
@@ -286,23 +288,24 @@ ui <- fluidPage(
               tags$li(HTML("<strong>Achievement:</strong> Academic achievement of any kind (standardized tests, grades)")),
               tags$li(HTML("<strong>Attainment:</strong> Indicators of level of education completed (passing a grade level, graduation)")),
               tags$li(HTML("<strong>Attendance:</strong> Number of days a student attended school or was absent")),
-              tags$li(HTML("<strong>Climate:</strong> School climate such as belongingness or feelings about school")),
-              tags$li(HTML("<strong>Crime:</strong> Juvenile crime or juvenile justice involvement rates in a community")),
-              tags$li(HTML("<strong>Health:</strong> Health status or health-related behaviors.")),
+              tags$li(HTML("<strong>Criminal Activity:</strong> Juvenile crime or juvenile justice involvement rates in a community")),
               tags$li(HTML("<strong>Disciplinary Incidents:</strong> Bullying, fighting, truancy, suspensions, expulsions")),
-              tags$li(HTML("<strong>Retention:</strong> Teacher retention rates or determinants of teacher retention"))
+              tags$li(HTML("<strong>Health:</strong> Health status or health-related behaviors")),
+              tags$li(HTML("<strong>Household Impacts:</strong> Family resources, home prices, parental employment, parental stress, time with family, travel.")),
+              tags$li(HTML("<strong>School Climate:</strong> School climate such as belongingness or feelings about school")),
+              tags$li(HTML("<strong>Staff/Teacher Retention:</strong> Staff/teacher retention rates or determinants of staff/teacher retention"))
             ),
             
             h4("Equity Domain Studied:"),
             p("Variables that researchers used to test differences across outcomes. For example, a study that is labeled with “age” is a study in which researchers tested differences in outcomes across student age groups."),
             
                tags$ul(
-                 tags$li(HTML("<strong>Age:</strong> Student age")),
+                 tags$li(HTML("<strong>Age or Grade Level:</strong> Student age or grade level")),
+                 tags$li(HTML("<strong>Community Type (Rurality):</strong> School rurality status")),
                  tags$li(HTML("<strong>English Language Learner:</strong> Student English-language-learner status")),
-                 tags$li(HTML("<strong>Gifted:</strong> Student gifted status")),
-                 tags$li(HTML("<strong>Immigrant:</strong> Student immigrant status")),
+                 tags$li(HTML("<strong>Gifted Student Status:</strong> Student gifted status")),
+                 tags$li(HTML("<strong>Immigration Status:</strong> Student immigration status")),
                  tags$li(HTML("<strong>Race/ethnicity:</strong> Student’s race/ethnicity")),
-                 tags$li(HTML("<strong>Rurality:</strong> School rurality status")),
                  tags$li(HTML("<strong>Socioeconomic Status:</strong> Student and family socioeconomic status")),
                  tags$li(HTML("<strong>Sex/gender:</strong> Student sex or gender identity")),
                  tags$li(HTML("<strong>Special Education:</strong> Student special education status"))
@@ -425,7 +428,7 @@ server <- function(input, output, session) {
 
     if (!is.null(input$community_filter) && length(input$community_filter) > 0) {
       filter_expr_community <- do.call(cbind, lapply(input$community_filter, function(community_filter) {
-        grepl(community_filter, filtered_data$rurality, ignore.case = TRUE)
+        grepl(community_filter, filtered_data$`Community Type (Rurality)`, ignore.case = TRUE)
       }))
       filtered_data <- filtered_data %>%
         filter(rowSums(filter_expr_community) > 0)
@@ -592,7 +595,7 @@ server <- function(input, output, session) {
     
     
     # List of variables
-    vars_list <- c("Rurality", "School Type", "Grade Level", "Student Race/Ethnicity", 
+    vars_list <- c("Community Type (Rurality)", "School Type", "Grade Level", "Student Race/Ethnicity", 
                    "Fifth Day Activities", "Study Design", "Outcome Domain Studied", 
                    "Equity Domain Studied", "Publication Type")
     
@@ -610,7 +613,7 @@ server <- function(input, output, session) {
     div(
       class = "table-container",
       div(class = "table",
-          h3("Rurality Table"), 
+          h3("Community Type (Rurality) Table"), 
           rendered_tables_list[[1]]
       ),
       div(class = "table",
