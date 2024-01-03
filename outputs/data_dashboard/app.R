@@ -147,8 +147,16 @@ ui <- fluidPage(
          ')
       
     ),
-    tags$link(rel = "stylesheet", type = "text/css", href = "https://fonts.googleapis.com/css?family=Open+Sans")
-  ),
+    tags$link(rel = "stylesheet", type = "text/css", href = "https://fonts.googleapis.com/css?family=Open+Sans"),
+  HTML('<!-- Google tag (gtag.js) -->
+          <script async src="https://www.googletagmanager.com/gtag/js?id=G-8W2N0L5B8P"></script>
+          <script>
+            window.dataLayer = window.dataLayer || [];
+            function gtag(){dataLayer.push(arguments);}
+            gtag("js", new Date());
+            gtag("config", "G-8W2N0L5B8P");
+          </script>')
+),
   div(class = "title-panel", "Four-Day School Week Research Database"),
   
   # Instructions
