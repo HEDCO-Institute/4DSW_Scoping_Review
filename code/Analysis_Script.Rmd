@@ -1,0 +1,416 @@
+---
+title: "Analysis_Script"
+author: "Shaina Trevino"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+#install and load packages
+if (!require("pacman")) install.packages("pacman")
+pacman::p_load(janitor, tidyverse, rio, here, readxl, gt)
+
+```
+
+```{r import}
+#import data
+raw_df <- import(here("data", "4DSW_Data.xlsx")) 
+
+#import eligibility data
+elig_df <- read_excel(here("data", "4DSW_Scoping_Search_Data.xlsx"), sheet = "reference_level") %>% 
+  clean_names()
+
+#IMPORT ADDITIONAL CODING
+#import fifth day additional coding
+fif_df <- import(here("data", "4dsw_fifthday.xlsx")) %>% 
+  janitor::clean_names() 
+
+#import author contact and student race/ethnicity additional coding
+add_df <- import(here("data", "4dsw_corrauth_studrace.xlsx")) %>% 
+  janitor::clean_names()
+
+#import reference info citation links
+ref_df <- import(here("data", "4dsw_eligible_citations_links.xlsx")) %>% 
+  janitor::clean_names() %>% 
+  rename(link = link_to_public_full_text,
+         citation = bibliography)
+
+```
+
+```{r tidy}
+#eligibility data
+elig_df <- elig_df %>% 
+  mutate(citation_cleaned = citation %>%
+           # Remove all text between and including ##
+           gsub("#[^#]*#", "", .) %>%
+           # Replace multiple spaces with a single space
+           gsub("\\s+", " ", .) %>%
+           # Remove periods except the last one
+           gsub("\\.(?![^.]*$)", "", ., perl = TRUE) %>%
+           # Remove trailing spaces
+           gsub("\\s+$", "", .) %>%
+           # Remove instances of () and (), 
+           gsub("\\(\\),\\s*", "", .) %>%
+           gsub("\\(\\)", "", .) %>%
+           # Replace ", ." with "."
+           gsub(",\\s*\\.", ".", .))
+
+#study data
+#transform wide variables to categorical variables  
+df_long <- raw_df %>%
+  select(refid, starts_with("community"), starts_with("state"), starts_with("grade"),
+         starts_with("school"), starts_with("effectiveness"), starts_with("equity"), 
+         starts_with("evidence"), -effectiveness_approach) %>% 
+  pivot_longer(cols = -refid, names_to = "variable", values_to = "response") %>%
+  mutate(
+    value = sub(".*_", "", variable),
+    value = str_to_title(value),
+    value = ifelse(value == "Unknown", "Not Reported", value),
+    response = str_remove_all(response, "; -999|-999;"),
+    response = str_squish(response),
+    response = case_when(response == "Yes; No" ~ "Yes",
+                         response == "No; Yes" ~ "Yes",
+                         TRUE ~ response),
+    new_var_name = case_when(str_detect(variable, "^community") ~ "community", 
+                             str_detect(variable, "^state") ~ "state",
+                             str_detect(variable, "^grade") ~ "grade_level",
+                             str_detect(variable, "^school") ~ "school_level",
+                             str_detect(variable, "^effectiveness") ~ "effectiveness",
+                             str_detect(variable, "^equity") ~ "equity",
+                             str_detect(variable, "^evidence") ~ "evidence_domain",
+                             TRUE ~ variable),
+    category = case_when(str_detect(variable, "^community") & response == "Yes" ~  value, 
+                         str_detect(variable, "^state") & response == "Yes" ~  value,
+                         str_detect(variable, "^grade") & response == "Yes" ~  value,
+                         str_detect(variable, "^school") & response == "Yes" ~  value,
+                         str_detect(variable, "^effectiveness") & response == "Yes" ~  value,
+                         str_detect(variable, "^equity") & response == "Yes" ~  value,
+                         str_detect(variable, "^evidence") & response == "Yes" ~ value,
+                         TRUE ~ NA)) %>% 
+  mutate(category = case_when(category == "Newmexico" ~ "New Mexico",
+                              category == "Southdakota" ~ "South Dakota",
+                              category == "Northdakota" ~ "North Dakota",
+                              category == "Northcarolina" ~ "North Carolina",
+                              category == "Southcarolina" ~ "South Carolina",
+                              category == "Newhampshire" ~ "New Hampshire",
+                              TRUE ~ category)) #%>% 
+  #left_join(state_abbrev_df, by = "category") %>% 
+  #mutate(abbrev = ifelse(is.na(abbrev), category, abbrev)) %>% 
+  #select(-category) %>% 
+  #rename(category = abbrev)
+
+td_longvar <- df_long %>%
+  group_by(refid, new_var_name) %>%
+  summarise(category_value = paste(category[!is.na(category)], collapse = "; "), .groups = "drop_last") %>%
+  pivot_wider(names_from = new_var_name, values_from = category_value) %>% 
+  ungroup()
+
+#list of single variables (to aggregate across id only)
+single_cat_vars <- c("author", "publication_year", "publication_type", "publisher", "student_type", "student_discipline",
+                     "data_years", "effectiveness_approach", "acceptability_stakeholders")
+
+#subset of single single aggregated variables
+single_df <- raw_df %>%
+ select(refid, all_of(single_cat_vars))
+
+#transform fifth day data for table
+fif_td <- fif_df %>% 
+ # mutate(fifth_day_recode_extracuriculars_clubs_sports = ifelse(fifth_day_recode_extracuriculars_clubs_sports == "Extracuriculars (clubs, sports)",
+  #                                                              "Extracurriculars (clubs/sports)",
+   #                                                             fifth_day_recode_extracuriculars_clubs_sports))  %>% 
+  pivot_longer(cols = fifth_day_recode_child_care:fifth_day_recode_not_reported, 
+               names_to = "variable", 
+               values_to = "response") %>% 
+  mutate(response = str_replace_all(response, 
+                                    c("Not reported" = "Not Reported"))) %>% 
+  group_by(refid) %>%
+  summarise(fifth_day_activities = paste(response[!is.na(response)], collapse = "; "), .groups = "drop_last") %>%
+  ungroup()
+
+#transform additional data for table
+add_td <- add_df %>% 
+  mutate(email = ifelse(grepl("@", corr_author_contact), corr_author_contact, NA))
+
+race_td <- add_df %>% 
+  mutate(race_ethnicity_other_please_specify = str_remove_all(race_ethnicity_other_please_specify, "\\s*\\(please specify\\)")) %>% 
+  pivot_longer(cols = race_ethnicity_american_indian_and_or_alaska_native:race_ethnicity_other_please_specify, 
+               names_to = "variable", 
+               values_to = "response") %>% 
+  group_by(refid) %>%
+  summarise(race_ethnicity = paste(response[!is.na(response)], collapse = "; "), .groups = "drop_last") %>%
+  ungroup() %>% 
+  mutate(race_ethnicity = ifelse(race_ethnicity == "", "Not Reported", race_ethnicity))
+
+#extract title from reference df
+ref_td <- ref_df %>% 
+  dplyr::select(refid, title)
+
+#extract cleaned citation from elig_df
+elig_subset <- elig_df %>% 
+  dplyr::select(refid, citation_cleaned)
+
+#merge all study data together
+jd <- single_df %>% 
+  left_join(td_longvar) %>% 
+  left_join(fif_td) %>% 
+  left_join(add_td) %>% 
+  left_join(race_td) %>% 
+  left_join(ref_td) %>% 
+  left_join(elig_subset)
+
+#correct formatting
+td_study <- jd %>% 
+  mutate_all(~ ifelse(is.na(.) | .x == -999 | . == "", "Not Reported", .)) %>% 
+  mutate_all(~ str_remove_all(as.character(.), "-999; |; -999")) %>% 
+  mutate_all(~ str_remove_all(as.character(.), "Not Reported; |; Not Reported")) %>% 
+  mutate(equity = str_replace_all(equity, c("Raceethnicity" = "Race/Ethnicity", "Sexgender" = "Sex/Gender", "Ell" = "ELL", 
+                                            "Ses" = "SES", "Specialeducation" = "Special Education"))) %>% 
+  select(-user, -level) %>% 
+   mutate(study_design = case_when(effectiveness_approach == "Hierarchical Linear Modeling" ~ "Between Groups - With Controls",
+                                  effectiveness_approach == "Regression Adjustment" ~ "Between Groups - With Controls",
+                                  effectiveness_approach == "ANOVA" ~ "Between Groups - Without Controls", 
+                                  effectiveness_approach == "MANOVA" ~ "Between Groups - Without Controls", 
+                                  effectiveness_approach == "Mann-Whitney U test" ~ "Between Groups - Without Controls", 
+                                  effectiveness_approach == "T-Test" ~ "Between Groups - Without Controls", 
+                                  effectiveness_approach == "No" ~ "Not Reported",
+                                  TRUE ~ effectiveness_approach)) %>% 
+  mutate(study_design = ifelse(study_design == "Not Reported", "Not Applicable", study_design),
+         acceptability_stakeholders = ifelse(acceptability_stakeholders == "Not Reported", "Not Applicable", acceptability_stakeholders),
+         outcome_domain_studied = str_replace_all(effectiveness, c("Retention" = "Staff/Teacher Retention",
+                                                                   "Climate" = "School Climate",
+                                                                   "Incidents" = "School Disciplinary Incidents",
+                                                                   "Households" = "Household Impacts",
+                                                                   "Crime" = "Criminal Activity")),
+         equity_domain_studied = str_replace_all(equity, c("Age" = "Age or Grade Level",
+                                                                   "Rurality" = "Community Type (Rurality)",
+                                                                   "ELL" = "English Language Learner",
+                                                                   "Gifted" = "Gifted Student Status",
+                                                                   "Immigrant" = "Immigration Status",
+                                                                   "Not Reported" = "Not Reported or Applicable")),
+         study_author_year = paste(author, publication_year),
+         pub_type = ifelse(publication_type == "Student", paste0(publication_type, ": ", student_type), publication_type)) 
+
+```
+
+
+## Appendices
+
+### Appendix 1. List of Studies Excluded at Full-Text Eligibility Assessment
+
+```{r a1-info}
+#create dataframe with information for appendix 1
+a1_info <- elig_df %>% 
+  filter(study_eligibility_decision == "Not Eligible") %>% 
+  dplyr::select(citation_cleaned, study_exclude_reason) %>% 
+  arrange(citation_cleaned)
+
+```
+
+```{r a1-gttable}
+#create gt table and format
+a1_table <- a1_info %>% 
+  gt()  %>% 
+  cols_label(citation_cleaned = "Excluded Review", 
+             study_exclude_reason = "Reason for Exclusion") %>% 
+  tab_style(style = list(cell_borders(sides = "all", color = "black", weight = px(1))),
+            locations = cells_body(columns = everything())) %>% 
+  tab_style(style = list(cell_borders(sides = "all", color = "black", weight = px(1)),
+                         cell_text(weight = "bold")),
+            locations = cells_column_labels()) %>% 
+  tab_options(column_labels.border.top.color = "black",
+              column_labels.border.bottom.color = "black",
+              table_body.border.bottom.color = "black",
+              table.border.top.color = "white",
+              heading.border.bottom.color = "black",
+              table_body.hlines.color = "white",
+              table.border.bottom.color = "white",
+              table.font.names = "Times New Roman") %>% 
+  tab_header(title = md("**<div style='text-align: center;'>Appendix 1</div>**<div style='text-align: center; margin-top:10px; margin-bottom:20px;'>**List of Studies Excluded at Full-Text Eligibility Assessment**<br></div>")) %>% 
+  tab_style(style = list(cell_text(align = "center")),
+            locations = cells_title(groups = "title")) %>% 
+  cols_width(citation_cleaned ~ pct(70), 
+             study_exclude_reason ~ pct(30))
+
+print(a1_table)
+
+```
+
+```{r a1-save}
+#save as html
+gtsave(a1_table, filename = "appendix_1.html", path = here("outputs", "appendices"))
+
+```
+
+
+### Appendix 2. List of Studies Awaiting Classification
+
+```{r a2-info}
+#create dataframe with citations for unclear and not retrieved studies
+a2_info <- elig_df %>% 
+  filter(pdf_retrieved == "No") %>% 
+  mutate(reason = ifelse(pdf_retrieved == "No", "Could not locate document", study_exclude_reason)) %>% 
+  dplyr::select(citation_cleaned, reason) %>% 
+  arrange(citation_cleaned)
+  
+```
+
+```{r a3-formattable}
+#create formatted gt table
+a2_table <- a2_info %>% 
+  gt()  %>% 
+  cols_label(citation_cleaned = "Study", 
+             reason = "Reason") %>% 
+  tab_style(style = list(cell_borders(sides = "all", color = "black", weight = px(1))),
+            locations = cells_body(columns = everything())) %>% 
+  tab_style(style = list(cell_borders(sides = "all", color = "black", weight = px(1)),
+                         cell_text(weight = "bold")),
+            locations = cells_column_labels()) %>% 
+  tab_options(column_labels.border.top.color = "black",
+              column_labels.border.bottom.color = "black",
+              table_body.border.bottom.color = "black",
+              table.border.top.color = "white",
+              heading.border.bottom.color = "black",
+              table_body.hlines.color = "white",
+              table.border.bottom.color = "white",
+              table.font.names = "Times New Roman") %>% 
+  tab_header(title = md("**<div style='text-align: center;'>Appendix 2</div>**<div style='text-align: center; margin-top:10px; margin-bottom:20px;'>**List of Studies Awaiting Classification**<br></div>")) %>% 
+  tab_style(style = list(cell_text(align = "center")),
+            locations = cells_title(groups = "title")) %>% 
+  cols_width(citation_cleaned ~ pct(78), 
+             reason ~ pct(22))
+
+print(a2_table)
+
+
+```
+
+```{r a2-save}
+#save as html
+gtsave(a2_table, filename = "appendix_2.html", path = here("outputs", "appendices"))
+
+```
+
+
+
+### Appendix 3. Characteristics of Included Studies
+
+```{r a3_info}
+a3_info <- td_study %>% 
+  dplyr::select(study_author_year, title, pub_type, data_years, community, school_level, grade_level, race_ethnicity,
+                state, fifth_day_activities, study_design, outcome_domain_studied, equity_domain_studied, evidence_domain,
+                acceptability_stakeholders, citation_cleaned) %>% 
+  arrange(study_author_year)
+
+```
+
+```{r a3-mapdf}
+#split data frame into list of data frames
+a3_dflist <- map(1:nrow(a3_info), ~a3_info[.x, ])
+
+#transfer to long format
+df_list_long <- map(a3_dflist, ~ .x %>% 
+                      pivot_longer(cols = everything(), 
+                                   names_to = "variable", 
+                                   values_to = "value") %>% 
+                      mutate(variable = case_when(variable == "study_author_year" ~ "Study",
+                                                  variable == "title" ~ "Title",
+                                                  variable == "pub_type" ~ "Publication Type",
+                                                  variable == "data_years" ~ "Data Years",
+                                                  variable == "community" ~ "Community Type (Rurality)",
+                                                  variable == "school_level" ~ "Education Level of Schools",
+                                                  variable == "grade_level" ~ "Grade Level",
+                                                  variable == "race_ethnicity" ~ "Student Race/Ethnicity",
+                                                  variable == "state" ~ "State(s)",
+                                                  variable == "fifth_day_activities" ~ "Fifth Day Activity",
+                                                  variable == "study_design" ~ "Study Design", 
+                                                  variable == "outcome_domain_studied" ~ "Outcome Domain Studied",
+                                                  variable == "equity_domain_studied" ~ "Equity Domain Studied",
+                                                  variable == "evidence_domain" ~ "Evidence Domain Studied",
+                                                  variable == "acceptability_stakeholders" ~ "<span style='font-size:15px;'>Stakeholders</span><br><span style='font-size:12px;'>(if acceptability studied)</span>",
+                                                  variable == "citation_cleaned" ~ "Main Citation",
+                                                  TRUE ~ variable)))
+  
+#combine into one single data frame
+combined_a3 <- bind_rows(df_list_long, .id = "source") %>% 
+  mutate(source = as.numeric(source))
+
+```
+
+```{r a3-maptable, results ='asis'}
+#create gt table for each for each review
+list_gt <- lapply(split(combined_a3, combined_a3$source), function(x) {
+  gt(x) %>% 
+    cols_hide("source") %>% 
+    cols_label(variable = "",
+               value = "") %>% 
+    tab_style(style = list(cell_text(weight = "bold")),
+            locations = cells_body(columns = "variable")) %>% 
+    tab_options(table.font.names = "Times New Roman",
+                table.width = "100%") %>% 
+    cols_width(variable ~ pct(20),
+               value ~ pct(80)) %>%
+    tab_style(style = cell_text(weight = "bold"), locations = cells_row_groups()) %>% 
+    tab_style(style = cell_text(align = "right"), locations = cells_body(columns = "variable", rows = 15)) %>%
+    fmt_markdown(columns = everything())
+})
+
+#add title
+a3_title_html <- '<h2 style="text-align:center;font-family:Times New Roman;font-size:20px;margin-bottom:5px;margin-top:25px;">
+  <div>Appendix 3</div>
+  <div style="margin-top:10px; margin-bottom:10px;">Characteristics of Included Studies</div>
+</h2>'
+
+
+#extract HTML code of table
+html_code <- list_gt %>% 
+  map(as_raw_html) %>% 
+  reduce(paste) %>% 
+  paste(a3_title_html, ., sep = "\n")
+
+#print in document
+htmltools::browsable(htmltools::HTML(html_code))
+
+```
+
+```{r a3-save}
+#save as HMTL
+writeLines(html_code, here("outputs", "appendices", "appendix_3.html"))
+
+```
+
+```{r save-rds}
+#save as rds object for technical report
+#combine all tables into list
+tables_list <- list(appendix1 = a1_table %>% tab_header(title = NULL, subtitle = NULL),
+                    appendix2 = a2_table %>% tab_header(title = NULL, subtitle = NULL),
+                    appendix3 = combined_a3)
+
+#save as rds object to technical_report/images directory
+saveRDS(tables_list, file = "outputs/technical_report/images/tables_list.rds")
+
+```
+
+
+
+# Results (plain text from excel descriptives)
+
+Our initial search initially yielded 3,069 citations (see Figure 1). After we removed 255 duplicates, we identified a total of 2,814 unique citations. During title and abstract screening, we excluded 2,355 citations, leaving 459 citations to retrieve for full-text eligibility assessment. Of the 441 citations that we could retrieve, we excluded 310 citations. The remaining 131 manuscripts eligible for this scoping review reported on 111 unique studies.
+Characteristics of Sources of Evidence
+We identified 111 studies reporting empirical research on the four-day school week in the
+4DSW SCOPING REVIEW TECHNICAL
+United States (see Table 2). Of these 111 published manuscripts, only 27 (24%) were peer-reviewed journal articles, while an additional 12 (11%) manuscripts were self-published reports and 2 (2%) were working papers pre-printed before journal peer review. The majority of articles (n = 70; 63%) were student manuscripts. Of these 70 student manuscripts, 57 were doctoral dissertations (81% of the student manuscripts), 11 were masters theses (16% of the student manuscripts), and 2 were undergraduate theses (3% of the student manuscripts). The vast majority of student manuscripts were in partial fulfillment of degrees in education (n = 62; 89% of the student manuscripts), followed by economics (n = 4; 6% of the student manuscripts), psychology (n = 2; 3% of the student manuscripts), sociology (n = 1; 1% of the student manuscripts), and music (n = 1; 1% of the student manuscripts). The manuscripts were published from 1980 to 2023 (median of 2020) and analyzed data from 1975 to 2022 (median of 2011).
+Studies predominantly examined the 4DSW in rural communities (n = 82; 74%), though numerous studies also examined the 4DSW in urban (n = 26; 23%) and suburban communities (n = 24; 22%). In terms of grade and school level, studies predominantly examined the 4DSW in Grades 3, 5, 8, and 11 (n = 66 each; 59% each)—although the number of studies was fairly evenly distributed across elementary (n = 81; 73%), middle (n = 77; 69%), and high (n = 81; 73%) school levels. Most studies (n = 67; 60%) studies did not report the race/ethnicity of students in the study sample. Of the 44 studies that did report student race/ethnicity data, the vast majority (n = 38; 34%) had a majority of students who identified as white. The majority of students identified as Hispanic, Latino, or Spanish in four studies (4%), American Indian or Alaska Native in one study (1%), and Native Hawaiian or Other Pacific Islander in one study (1%). In terms of the type of 4DSW under investigation, most studies (n = 60; 54%) did not report what schools did on the fifth day for any districts in their sample. Of the 51 studies that
+4DSW SCOPING REVIEW TECHNICAL
+did report this information, most studies involved either schools offering no activities (n =35; 32%) or teacher in-service (n = 33; 30%) on the fifth day. Regarding states (see Figure 2), studies predominantly examined the 4DSW in Missouri (n = 33; 30%), Colorado (n = 26; 23%), Oklahoma (n = 18; 16%), Oregon (n = 17; 15%), New Mexico (n = 13; 12%), South Dakota (n = 12; 11%), and Idaho (n = 11; 10%).
+Empirical Research Evidence on the Priority of the Four-Day School Week
+Of these 111 published manuscripts, 3 (3%) reported empirical research evidence on the four-day school week as a priority: i.e., evidence on the extent of four-day school week policy adoption. Two journal articles were published in 2021: Anglum and Park (2021) analyzed data from 2010 through 2019, while Thompson et al. (2021) analyzed data from 1999 through 2019. Anglum and Park (2021) focused on district adoption of the four-day school week across the 516 school districts in Missouri, while Thompson et al. (2021) conducted a comprehensive national assessment across 24 states in which they identified at last one school district with at least one school that had adopted a four-day school week. These states are Alaska, Arizona, California, Colorado, Georgia, Idaho, Iowa, Kansas, Louisiana, Michigan, Minnesota, Missouri, Montana, Nebraska, Nevada, New Mexico, North Dakota, Oklahoma, Oregon, South Dakota, Texas, Utah, Washington, and Wyoming. One report from the National Center for Education Statistics (2020) used data from the 2017–18 National Teacher and Principal Survey to examine characteristics of the 2% of public schools where students attend classes fewer than five days per week.
+Empirical Research Evidence on the Effects and Equitability of the Four-Day School Week
+Of these 111 published manuscripts, 71 (64%) reported empirical research evidence on
+4DSW SCOPING REVIEW TECHNICAL
+the effectiveness of the four-day school week. To assess effectiveness, 15 studies (21% of the 71 effectiveness studies) used either difference-in-differences or descriptive statistics only, 14 studies (20%) used a before-after design, 13 (18%) used a between-group design without statistical controls (ANOVA, Mann-Whitney U test, MANOVA, t-test), seven (10%) used a between-group design with statistical controls (multilevel regression, multiple linear regression), five (7%) used a matched-pair design, and two (3%) used a computational model to examine simulated data. Effectiveness outcomes included educational achievement (n = 50; 70% of the 71 effectiveness studies), attendance (n = 22; 31%), health status and health-related behaviors (n = 8; 11%), teacher retention (n = 8; 11%), educational attainment (n = 7; 10%), school climate (n = 7; 10%), school disciplinary incidents (n = 5; 7%), household impacts (n = 4; 6%), and criminal activity (n = 2; 3%). Most effectiveness studies (n = 40; 56% of the 71 effectiveness studies) examined equitability of 4DSW effects: 28 effectiveness studies (39%) examined equitability of effects in relation to student ages or grade levels, eight (11%) by community rurality, eight (11%) by student socioeconomic status, six (8%) by student race and/or ethnicity, five (7%) by student sex or gender identity, four (6%) by student special education status, three (4%) by English language learner status, two (3%) by gifted student status, and one (1%) by immigrant status.
+Empirical Research Evidence on the Implementability of the Four-Day School Week
+Of these 111 published manuscripts, 69 (62%) reported empirical research evidence on implementation of the four-day school week. To assess implementation, 45 studies (41%) examined acceptability, 36 studies (32%) examined feasibility, and 29 studies (26%) examined resource use. The acceptability studies examined satisfaction with the 4DSW among teachers (n
+4DSW SCOPING REVIEW TECHNICAL
+= 33; 73% of the 45 acceptability studies), parents (n = 19; 42%), administrators (n = 17; 38%), students (n = 14; 31%), community members (n = 10; 22%), principals (n = 8; 18%), school staff (n = 8; 18%), superintendents (n = 7; 16%), and the athletics department, business owners, school board members, and counselors (n = 2 each; 4% each).
