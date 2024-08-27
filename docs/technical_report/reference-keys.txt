@@ -1,3 +1,4 @@
+url-your-book-url-like-httpsbookdown.orgyihuibookdown
 objective
 methods
 eligibility-criteria
@@ -24,3 +25,7 @@ tables
 table-1.-eligibility-criteria-for-including-and-escluding-studies-in-the-scoping-review
 table-2.-characteristics-of-included-sources-of-evidence-on-the-four-day-school-week
 table-3.-types-of-available-research-evidence-on-the-four-day-school-week
+appendices
+appendix-1.-list-of-studies-excluded-at-full-text-eligibility-assessment
+appendix-2.-list-of-studies-awaiting-classification
+appendix-3.-characteristics-of-included-studies

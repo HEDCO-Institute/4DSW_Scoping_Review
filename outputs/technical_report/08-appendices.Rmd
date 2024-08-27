@@ -1,0 +1,64 @@
+# Appendices
+
+```{r import_rds, include = FALSE}
+library(tidyverse)
+library(gt)
+
+table_list <- readRDS("images/tables_list.rds")
+
+```
+
+## Appendix 1. List of Studies Excluded at Full-Text Eligibility Assessment
+
+```{r a1, echo = FALSE, results = 'asis'}
+#import from rds
+a1 <- table_list$appendix1 
+
+print(a1)
+
+```
+
+## Appendix 2. List of Studies Awaiting Classification
+
+```{r a2, echo = FALSE, results = 'asis'}
+#import from rds
+a2 <- table_list$appendix2
+
+print(a2)
+
+```
+
+## Appendix 3. Characteristics of Included Studies
+
+```{r a3, echo = FALSE, results = 'asis'}
+#import from rds
+combined_a3 <- table_list$appendix3
+
+#create gt table for each for each study
+list_gt <- lapply(split(combined_a3, combined_a3$source), function(x) {
+  gt(x) %>% 
+    cols_hide("source") %>% 
+    cols_label(variable = "",
+               value = "") %>% 
+    tab_style(style = list(cell_text(weight = "bold")),
+            locations = cells_body(columns = "variable")) %>% 
+    tab_options(table.font.names = "Times New Roman",
+                table.width = "100%") %>% 
+    cols_width(variable ~ pct(20),
+               value ~ pct(80)) %>%
+    tab_style(style = cell_text(weight = "bold"), locations = cells_row_groups()) %>% 
+    tab_style(style = cell_text(align = "right"), locations = cells_body(columns = "variable", rows = 15)) %>%
+    fmt_markdown(columns = everything())
+})
+
+
+#extract HTML code of table
+html_code <- list_gt %>% 
+  map(as_raw_html) %>% 
+  reduce(paste)
+
+#print in document
+htmltools::HTML(html_code)
+
+
+```
