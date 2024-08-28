@@ -37,6 +37,14 @@ ref_df <- import(here("data", "4dsw_eligible_citations_links.xlsx")) %>%
   rename(link = link_to_public_full_text,
          citation = bibliography)
 
+#import citations for all refids
+cit_df <- import(here("data", "4dsw_all_citations.xlsx")) %>% 
+  janitor::clean_names()
+
+#import linked references
+linked_df <- import(here("data", "4dsw_linked_references.xlsx")) %>% 
+  janitor::clean_names()
+
 ```
 
 ```{r tidy}
@@ -56,6 +64,46 @@ elig_df <- elig_df %>%
            gsub("\\(\\)", "", .) %>%
            # Replace ", ." with "."
            gsub(",\\s*\\.", ".", .))
+
+#reference data
+cit_td <- cit_df %>% 
+  mutate(citation_cleaned = bibliography %>%
+           # Remove all text between and including ##
+           gsub("#[^#]*#", "", .) %>%
+           # Replace multiple spaces with a single space
+           gsub("\\s+", " ", .) %>%
+           # Remove periods except the last one
+           gsub("\\.(?![^.]*$)", "", ., perl = TRUE) %>%
+           # Remove trailing spaces
+           gsub("\\s+$", "", .) %>%
+           # Remove instances of () and (), 
+           gsub("\\(\\),\\s*", "", .) %>%
+           gsub("\\(\\)", "", .) %>%
+           # Replace ", ." with "."
+           gsub(",\\s*\\.", ".", .) %>% 
+           # Replace " ." with "."
+           gsub("\\s*\\.", ".", .) %>% 
+           # Replace " ," with ","
+           gsub("\\s*\\,", ",", .)) %>% 
+  select(-bibliography)
+
+#transform linked references to combine multiple reports per study
+linked_td <- linked_df %>% 
+  select(ref_id, linked_refid) %>% 
+  rowwise() %>% 
+  mutate(main_refid = ref_id) %>%
+  reframe(main_refid = main_refid,
+          refid = c(ref_id, linked_refid)) %>%
+  ungroup() %>% 
+  distinct() %>% 
+  left_join(cit_td) %>% 
+  group_by(main_refid) %>% 
+  summarize(all_reports = paste(citation_cleaned, collapse = " !!! "),
+            all_refids = paste(refid, collapse = ", ")) %>% 
+  ungroup() %>% 
+  mutate(all_reports = str_replace_all(all_reports, "!!! ", "<br><br>")) %>% 
+  rename(refid = main_refid) %>% 
+  mutate(refid = as.character(refid))
 
 #study data
 #transform wide variables to categorical variables  
@@ -297,11 +345,15 @@ gtsave(a2_table, filename = "appendix_2.html", path = here("outputs", "appendice
 ### Appendix 3. Characteristics of Included Studies
 
 ```{r a3_info}
+#merge with linked references and select variables
 a3_info <- td_study %>% 
+  left_join(linked_td) %>%
+  mutate(all_reports = ifelse(is.na(all_reports), citation_cleaned, all_reports)) %>% 
   dplyr::select(study_author_year, title, pub_type, data_years, community, school_level, grade_level, race_ethnicity,
                 state, fifth_day_activities, study_design, outcome_domain_studied, equity_domain_studied, evidence_domain,
-                acceptability_stakeholders, citation_cleaned) %>% 
+                acceptability_stakeholders, all_reports) %>% 
   arrange(study_author_year)
+
 
 ```
 
@@ -329,7 +381,7 @@ df_list_long <- map(a3_dflist, ~ .x %>%
                                                   variable == "equity_domain_studied" ~ "Equity Domain Studied",
                                                   variable == "evidence_domain" ~ "Evidence Domain Studied",
                                                   variable == "acceptability_stakeholders" ~ "<span style='font-size:15px;'>Stakeholders</span><br><span style='font-size:12px;'>(if acceptability studied)</span>",
-                                                  variable == "citation_cleaned" ~ "Main Citation",
+                                                  variable == "all_reports" ~ "Citation(s)",
                                                   TRUE ~ variable)))
   
 #combine into one single data frame
