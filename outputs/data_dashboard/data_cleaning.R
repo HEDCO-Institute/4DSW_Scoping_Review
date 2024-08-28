@@ -7,7 +7,7 @@ pacman::p_load(janitor, tidyverse, rio, here)
 raw_df <- import(here("data", "4DSW_Data.xlsx")) 
 
 
-#create dataframe to marge state abbreviations
+#create dataframe to merge state abbreviations
 state_abbrev_df <- data.frame(category = state.name,
                               abbrev = state.abb)
 

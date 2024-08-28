@@ -86,7 +86,7 @@ capitalize_colnames <- function(df) {
 
 # Define UI for application that will show table
 ui <- fluidPage(
-  # Application title
+  # HTML Customization
   tags$head(
     tags$style(
       HTML('
@@ -157,6 +157,7 @@ ui <- fluidPage(
             gtag("config", "G-8W2N0L5B8P");
           </script>')
 ),
+# Title
   div(class = "title-panel", "Four-Day School Week Research Database"),
   
   # Instructions
@@ -333,11 +334,6 @@ ui <- fluidPage(
 
 server <- function(input, output, session) {
   
-  # Create a reactive variable to store selected states
-  selected_states <- reactiveVal(character(0))
-  
-  clicked_state <- reactiveVal(character(0))
-  
   # Create base map
   base_map <- plot_geo() %>%
     add_trace(
@@ -371,6 +367,11 @@ server <- function(input, output, session) {
     # us_states
     base_map
   })
+  
+  # Create a reactive variable to store selected states
+  selected_states <- reactiveVal(character(0))
+  
+  clicked_state <- reactiveVal(character(0))
 
   
   # Listen to map click events and update selected states
@@ -433,7 +434,7 @@ server <- function(input, output, session) {
         filter(grepl(selected_states_regex, state, ignore.case = TRUE))
     }
     
-
+    # Filter by community type
     if (!is.null(input$community_filter) && length(input$community_filter) > 0) {
       filter_expr_community <- do.call(cbind, lapply(input$community_filter, function(community_filter) {
         grepl(community_filter, filtered_data$`Community Type (Rurality)`, ignore.case = TRUE)
@@ -442,7 +443,7 @@ server <- function(input, output, session) {
         filter(rowSums(filter_expr_community) > 0)
     }
     
-
+    # Filter by school type
     if (!is.null(input$school_filter) && length(input$school_filter) > 0) {
       filter_expr_school <- do.call(cbind, lapply(input$school_filter, function(school_filter) {
         grepl(school_filter, filtered_data$school_type, ignore.case = TRUE)
@@ -471,6 +472,7 @@ server <- function(input, output, session) {
         filter(rowSums(filter_expr_effectiveness) > 0)
     }
 
+    # Filter by fifth day activity
     if (!is.null(input$fifthday_filter) && length(input$fifthday_filter) > 0) {
       filter_expr_fifthday <- do.call(cbind, lapply(input$fifthday_filter, function(fifthday_filter) {
         grepl(fifthday_filter, filtered_data$fifth_day_activities, ignore.case = TRUE)
