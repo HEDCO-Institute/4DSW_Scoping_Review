@@ -45,6 +45,25 @@ cit_df <- import(here("data", "4dsw_all_citations.xlsx")) %>%
 linked_df <- import(here("data", "4dsw_linked_references.xlsx")) %>% 
   janitor::clean_names()
 
+
+
+#Updated 11/22/24
+raw_df <- import(here("data", "4dsw_study_data_2024-11-25.xlsx")) %>% 
+  janitor::clean_names() %>% 
+  distinct(across(-user), .keep_all = TRUE) %>% 
+  #temporarily until conflicts are resolved
+  distinct(refid, .keep_all = TRUE)
+
+elig_df <- read_excel(here("data", "4DSW_citation_data.xlsx")) %>% 
+  clean_names()
+
+linked_df <- import(here("data", "4dsw_linked_references.xlsx")) %>% 
+  janitor::clean_names()
+
+cit_df <- import(here("data", "4dsw_all_citations.xlsx")) %>% 
+  janitor::clean_names()
+
+
 ```
 
 ```{r tidy}
@@ -105,59 +124,63 @@ linked_td <- linked_df %>%
   rename(refid = main_refid) %>% 
   mutate(refid = as.character(refid))
 
-#study data
-#transform wide variables to categorical variables  
+
 df_long <- raw_df %>%
+  # Select relevant columns
   select(refid, starts_with("community"), starts_with("state"), starts_with("grade"),
          starts_with("school"), starts_with("effectiveness"), starts_with("equity"), 
-         starts_with("evidence"), -effectiveness_approach) %>% 
+         starts_with("evidence"), -effectiveness_approach, starts_with("stakeholder_groups_select"), starts_with("data_years_select")) %>% 
+  # Pivot to long format
   pivot_longer(cols = -refid, names_to = "variable", values_to = "response") %>%
+  # Extract and clean the variable categories
   mutate(
-    value = sub(".*_", "", variable),
-    value = str_to_title(value),
-    value = ifelse(value == "Unknown", "Not Reported", value),
-    response = str_remove_all(response, "; -999|-999;"),
-    response = str_squish(response),
-    response = case_when(response == "Yes; No" ~ "Yes",
-                         response == "No; Yes" ~ "Yes",
-                         TRUE ~ response),
-    new_var_name = case_when(str_detect(variable, "^community") ~ "community", 
-                             str_detect(variable, "^state") ~ "state",
-                             str_detect(variable, "^grade") ~ "grade_level",
-                             str_detect(variable, "^school") ~ "school_level",
-                             str_detect(variable, "^effectiveness") ~ "effectiveness",
-                             str_detect(variable, "^equity") ~ "equity",
-                             str_detect(variable, "^evidence") ~ "evidence_domain",
-                             TRUE ~ variable),
-    category = case_when(str_detect(variable, "^community") & response == "Yes" ~  value, 
-                         str_detect(variable, "^state") & response == "Yes" ~  value,
-                         str_detect(variable, "^grade") & response == "Yes" ~  value,
-                         str_detect(variable, "^school") & response == "Yes" ~  value,
-                         str_detect(variable, "^effectiveness") & response == "Yes" ~  value,
-                         str_detect(variable, "^equity") & response == "Yes" ~  value,
-                         str_detect(variable, "^evidence") & response == "Yes" ~ value,
-                         TRUE ~ NA)) %>% 
-  mutate(category = case_when(category == "Newmexico" ~ "New Mexico",
-                              category == "Southdakota" ~ "South Dakota",
-                              category == "Northdakota" ~ "North Dakota",
-                              category == "Northcarolina" ~ "North Carolina",
-                              category == "Southcarolina" ~ "South Carolina",
-                              category == "Newhampshire" ~ "New Hampshire",
-                              TRUE ~ category)) #%>% 
-  #left_join(state_abbrev_df, by = "category") %>% 
-  #mutate(abbrev = ifelse(is.na(abbrev), category, abbrev)) %>% 
-  #select(-category) %>% 
-  #rename(category = abbrev)
+    value = sub(".*_", "", variable), # Extract the suffix of the variable name
+    value = str_to_title(value), # Capitalize for consistency
+    value = ifelse(value == "Unknown", "Not Reported", value), # Rename "Unknown" to "Not Reported"
+    response = str_remove_all(response, "; -999|-999;"), # Clean invalid codes
+    response = str_squish(response), # Remove unnecessary spaces
+    # If a response exists (non-NA), use the response itself as the category
+    category = case_when(
+      !is.na(response) & response != "" ~ value,
+      TRUE ~ NA_character_
+    ),
+    # Create new variable names for grouping
+    new_var_name = case_when(
+      str_detect(variable, "^community") ~ "community", 
+      str_detect(variable, "^state") ~ "state",
+      str_detect(variable, "^grade") ~ "grade_level",
+      str_detect(variable, "^school") ~ "school_level",
+      str_detect(variable, "^effectiveness") ~ "effectiveness",
+      str_detect(variable, "^equity") ~ "equity",
+      str_detect(variable, "^evidence") ~ "evidence_domain",
+      str_detect(variable, "^data_years_select") ~ "data_years",
+      str_detect(variable, "^stakeholder_groups_select") ~ "stakeholder_groups",
+      TRUE ~ variable
+    ),
+    # Fix specific state naming issues
+    category = case_when(
+      category == "Newmexico" ~ "New Mexico",
+      category == "Southdakota" ~ "South Dakota",
+      category == "Northdakota" ~ "North Dakota",
+      category == "Northcarolina" ~ "North Carolina",
+      category == "Southcarolina" ~ "South Carolina",
+      category == "Newhampshire" ~ "New Hampshire",
+      TRUE ~ category
+    )
+  )
 
 td_longvar <- df_long %>%
   group_by(refid, new_var_name) %>%
   summarise(category_value = paste(category[!is.na(category)], collapse = "; "), .groups = "drop_last") %>%
   pivot_wider(names_from = new_var_name, values_from = category_value) %>% 
-  ungroup()
+  ungroup() %>% 
+  mutate(data_years = ifelse(data_years == "999", "Not Reported", data_years))
+
+
 
 #list of single variables (to aggregate across id only)
-single_cat_vars <- c("author", "publication_year", "publication_type", "publisher", "student_type", "student_discipline",
-                     "data_years", "effectiveness_approach", "acceptability_stakeholders")
+single_cat_vars <- c("author_last_name", "publication_year", "publication_type", "publisher", "student_type", "student_discipline",
+                     "effectiveness_approach")
 
 #subset of single single aggregated variables
 single_df <- raw_df %>%
@@ -165,9 +188,6 @@ single_df <- raw_df %>%
 
 #transform fifth day data for table
 fif_td <- fif_df %>% 
- # mutate(fifth_day_recode_extracuriculars_clubs_sports = ifelse(fifth_day_recode_extracuriculars_clubs_sports == "Extracuriculars (clubs, sports)",
-  #                                                              "Extracurriculars (clubs/sports)",
-   #                                                             fifth_day_recode_extracuriculars_clubs_sports))  %>% 
   pivot_longer(cols = fifth_day_recode_child_care:fifth_day_recode_not_reported, 
                names_to = "variable", 
                values_to = "response") %>% 
@@ -225,7 +245,7 @@ td_study <- jd %>%
                                   effectiveness_approach == "No" ~ "Not Reported",
                                   TRUE ~ effectiveness_approach)) %>% 
   mutate(study_design = ifelse(study_design == "Not Reported", "Not Applicable", study_design),
-         acceptability_stakeholders = ifelse(acceptability_stakeholders == "Not Reported", "Not Applicable", acceptability_stakeholders),
+         stakeholder_groups = ifelse(stakeholder_groups == "Not Reported", "Not Applicable", stakeholder_groups),
          outcome_domain_studied = str_replace_all(effectiveness, c("Retention" = "Staff/Teacher Retention",
                                                                    "Climate" = "School Climate",
                                                                    "Incidents" = "School Disciplinary Incidents",
@@ -237,10 +257,132 @@ td_study <- jd %>%
                                                                    "Gifted" = "Gifted Student Status",
                                                                    "Immigrant" = "Immigration Status",
                                                                    "Not Reported" = "Not Reported or Applicable")),
-         study_author_year = paste(author, publication_year),
+         study_author_year = paste(author_last_name, publication_year),
          pub_type = ifelse(publication_type == "Student", paste0(publication_type, ": ", student_type), publication_type)) 
 
 ```
+
+## Scoping Review Results to Confirm Tables
+
+```{r tbl-results}
+data <- import(here("data", "4dsw_study_data_2024-11-25.xlsx")) %>% 
+  janitor::clean_names() %>% 
+  mutate(across(where(is.character), ~ na_if(., ""))) %>% 
+  distinct(refid, .keep_all = TRUE)
+
+# Define function to summarize checkbox variables
+summarize_checkboxes <- function(data, prefix, filter_condition = NULL) {
+  filtered_data <- if (!is.null(filter_condition)) {
+    data %>% filter(!!rlang::parse_expr(filter_condition))
+  } else {
+    data
+  }
+  
+  filtered_data %>%
+    select(starts_with(prefix)) %>%
+    summarise(across(everything(), ~ sum(!is.na(.)), .names = "N_{col}")) %>%
+    pivot_longer(cols = everything(), names_to = "Category", values_to = "N") %>%
+    mutate(
+      Percentage = round((N / nrow(filtered_data)) * 100, 1),
+      Denominator = nrow(filtered_data)  # Add the denominator
+    )
+}
+  
+# Apply function to variable groups
+community_summary <- summarize_checkboxes(data, "community_")
+state_summary <- summarize_checkboxes(data, "state_")
+grade_summary <- summarize_checkboxes(data, "grade_")
+school_summary <- summarize_checkboxes(data, "school_")
+fifthday_summary <- summarize_checkboxes(data, "fifthday_")
+evidence_summary <- summarize_checkboxes(data, "evidence_")
+outcome_summary <- summarize_checkboxes(data, "effectiveness_", filter_condition = "!is.na(evidence_effectiveness)") #demon = studies reporting effectiveness
+equity_summary <- summarize_checkboxes(data, "equity_", filter_condition = "!is.na(evidence_equity)") #demon = studies reporting equity
+stakeholder_summary <- summarize_checkboxes(data, "stakeholder_groups_select_", filter_condition = "!is.na(evidence_acceptability)") #demon = studies reporting acceptability
+
+
+# Create function to summarize single-response categorical variables
+categorical_summary <- function(data, var, filter_condition = NULL) {
+  filtered_data <- if (!is.null(filter_condition)) {
+    data %>% filter(!!rlang::parse_expr(filter_condition))
+  } else {
+    data
+  }
+  
+  filtered_data %>%
+    count(!!sym(var)) %>%
+    mutate(
+      Percentage = round((n / nrow(filtered_data)) * 100, 1),
+      Denominator = nrow(filtered_data)  
+    ) %>%
+    rename(Category = !!sym(var), N = n)
+}
+ 
+
+publication_summary <- categorical_summary(data, "publication_type")
+student_type_summary <- categorical_summary(data, "student_type", filter_condition = "publication_type == 'Student'")
+student_disc_summary <- categorical_summary(data, "student_discipline", filter_condition = "publication_type == 'Student'")
+race_summary <- categorical_summary(data, "raceethnicity_majority")
+approach_summary <- categorical_summary(data, "effectiveness_approach", filter_condition = "!is.na(evidence_effectiveness)")
+
+
+# Summarize numerical variables (median and range)
+numerical_summary <- function(data, var) {
+  data %>%
+    summarise(
+      Median = median(!!sym(var), na.rm = TRUE),
+      Range = paste0(min(!!sym(var), na.rm = TRUE), "-", max(!!sym(var), na.rm = TRUE))
+    )
+}
+
+publication_year_summary <- numerical_summary(data, "publication_year")
+
+#For data_years, as checkbox variable
+# Combine all year columns into a single column
+years_summary <- data %>%
+  select(starts_with("data_years_select_")) %>%  # Select all year-related columns
+  pivot_longer(cols = everything(), names_to = "year_variable", values_to = "year") %>%  # Reshape to long format
+  mutate(year = as.numeric(year)) %>%  # Ensure the years are numeric
+  filter(!is.na(year) & year != -999)  # Remove NA and -999 values
+
+# Calculate median and range
+summary_data_years <- years_summary %>%
+  summarise(
+    Median = median(year, na.rm = TRUE),
+    Range = paste0(min(year, na.rm = TRUE), "-", max(year, na.rm = TRUE))
+  )
+
+
+
+# Print Table 1 info
+
+print(publication_year_summary)
+print(publication_summary)
+print(student_type_summary)
+print(student_disc_summary) 
+print(summary_data_years)
+print(community_summary)
+print(state_summary, n = 50)
+print(grade_summary)
+print(school_summary)
+print(race_summary)
+print(fifthday_summary)
+
+
+# Print Table 2 info
+print(evidence_summary[1,])
+print(stakeholder_summary, n = 30) 
+print(evidence_summary[2,])
+print(approach_summary) 
+print(outcome_summary) 
+print(transform(evidence_summary[3,], Percentage = round(N / nrow(data %>% filter(!is.na(evidence_effectiveness))) * 100, 0))) 
+print(equity_summary)
+print(slice(evidence_summary, -1:-3))
+
+#TODO: calculate "studies that reported on one type of evidence on the implementability"
+
+
+```
+
 
 
 ## Appendices
@@ -345,13 +487,70 @@ gtsave(a2_table, filename = "appendix_2.html", path = here("outputs", "appendice
 ### Appendix 3. Characteristics of Included Studies
 
 ```{r a3_info}
+# Process `data_years` to calculate ranges
+td_dy <- td_study %>%
+  separate_rows(data_years, sep = ";\\s*") %>%              # Split data_years into separate rows
+  filter(data_years != "Not Reported") %>%                 # Exclude "Not Reported"
+  mutate(data_years = as.numeric(data_years)) %>%           # Convert years to numeric
+  arrange(refid, data_years) %>%                           # Arrange by refid and year
+  group_by(refid) %>%
+  mutate(
+    gap = data_years - lag(data_years, default = first(data_years)) > 1,  # Identify gaps
+    range_group = cumsum(gap)                                            # Group consecutive years
+  ) %>%
+  group_by(refid, range_group) %>%
+  summarise(range = ifelse(n() == 1, as.character(data_years),           # Summarize to ranges
+                           paste0(min(data_years), "-", max(data_years))),
+            .groups = "drop") %>%
+  group_by(refid) %>%
+  summarise(data_years = paste(range, collapse = "; ")) 
+
+td_study_tbl <- td_study %>%
+  select(-data_years) %>% 
+  left_join(td_dy, by = "refid") %>% 
+  mutate(data_years = ifelse(is.na(data_years), "Not Reported", data_years),
+         refid = as.double(refid))
+
+# Process `grade_level` to show ranges
+td_gl <- td_study_tbl %>%
+  separate_rows(grade_level, sep = ";\\s*") %>%              # Split grade_level into separate rows
+  mutate(
+    grade_level = ifelse(grade_level == "K", "0", grade_level), # Convert "K" to "0" for sorting
+    grade_level = ifelse(grade_level == "Not Reported", NA, grade_level) # Handle "Not Reported"
+  ) %>%
+  filter(!is.na(grade_level)) %>%                            # Exclude NA values temporarily
+  mutate(grade_level = as.numeric(grade_level)) %>%          # Convert to numeric
+  arrange(refid, grade_level) %>%                           # Arrange by refid and grade_level
+  group_by(refid) %>%
+  mutate(
+    gap = grade_level - lag(grade_level, default = first(grade_level)) > 1, # Identify gaps
+    range_group = cumsum(gap)                                              # Group contiguous grades
+  ) %>%
+  group_by(refid, range_group) %>%
+  summarise(
+    range = ifelse(n() == 1, 
+                   ifelse(first(grade_level) == 0, "K", as.character(first(grade_level))), # Single grade
+                   paste0(ifelse(min(grade_level) == 0, "K", as.character(min(grade_level))),
+                          "-",
+                          as.character(max(grade_level)))
+    ), .groups = "drop"
+  ) %>%
+  group_by(refid) %>%
+  summarise(
+    grade_level_range = paste(range, collapse = "; ") # Combine multiple ranges into a single string
+  ) %>%
+  right_join(td_study_tbl, by = "refid") %>%                    # Merge with original data, keeping rows with "Not Reported"
+  mutate(grade_level = ifelse(is.na(grade_level_range), "Not Reported", grade_level_range)) %>% # Restore "Not Reported"
+  select(-grade_level_range) %>% 
+  mutate(refid = as.character(refid))
+
 #merge with linked references and select variables
-a3_info <- td_study %>% 
+a3_info <- td_gl %>% 
   left_join(linked_td) %>%
   mutate(all_reports = ifelse(is.na(all_reports), citation_cleaned, all_reports)) %>% 
   dplyr::select(study_author_year, title, pub_type, data_years, community, school_level, grade_level, race_ethnicity,
                 state, fifth_day_activities, study_design, outcome_domain_studied, equity_domain_studied, evidence_domain,
-                acceptability_stakeholders, all_reports) %>% 
+                stakeholder_groups, all_reports) %>% 
   arrange(study_author_year)
 
 
@@ -380,7 +579,7 @@ df_list_long <- map(a3_dflist, ~ .x %>%
                                                   variable == "outcome_domain_studied" ~ "Outcome Domain Studied",
                                                   variable == "equity_domain_studied" ~ "Equity Domain Studied",
                                                   variable == "evidence_domain" ~ "Evidence Domain Studied",
-                                                  variable == "acceptability_stakeholders" ~ "<span style='font-size:15px;'>Stakeholders</span><br><span style='font-size:12px;'>(if acceptability studied)</span>",
+                                                  variable == "stakeholder_groups" ~ "<span style='font-size:15px;'>Stakeholders</span><br><span style='font-size:12px;'>(if acceptability studied)</span>",
                                                   variable == "all_reports" ~ "Citation(s)",
                                                   TRUE ~ variable)))
   
@@ -444,25 +643,3 @@ saveRDS(tables_list, file = "outputs/technical_report/images/tables_list.rds")
 
 ```
 
-
-
-# Results (plain text from excel descriptives)
-
-Our initial search initially yielded 3,069 citations (see Figure 1). After we removed 255 duplicates, we identified a total of 2,814 unique citations. During title and abstract screening, we excluded 2,355 citations, leaving 459 citations to retrieve for full-text eligibility assessment. Of the 441 citations that we could retrieve, we excluded 310 citations. The remaining 131 manuscripts eligible for this scoping review reported on 111 unique studies.
-Characteristics of Sources of Evidence
-We identified 111 studies reporting empirical research on the four-day school week in the
-4DSW SCOPING REVIEW TECHNICAL
-United States (see Table 2). Of these 111 published manuscripts, only 27 (24%) were peer-reviewed journal articles, while an additional 12 (11%) manuscripts were self-published reports and 2 (2%) were working papers pre-printed before journal peer review. The majority of articles (n = 70; 63%) were student manuscripts. Of these 70 student manuscripts, 57 were doctoral dissertations (81% of the student manuscripts), 11 were masters theses (16% of the student manuscripts), and 2 were undergraduate theses (3% of the student manuscripts). The vast majority of student manuscripts were in partial fulfillment of degrees in education (n = 62; 89% of the student manuscripts), followed by economics (n = 4; 6% of the student manuscripts), psychology (n = 2; 3% of the student manuscripts), sociology (n = 1; 1% of the student manuscripts), and music (n = 1; 1% of the student manuscripts). The manuscripts were published from 1980 to 2023 (median of 2020) and analyzed data from 1975 to 2022 (median of 2011).
-Studies predominantly examined the 4DSW in rural communities (n = 82; 74%), though numerous studies also examined the 4DSW in urban (n = 26; 23%) and suburban communities (n = 24; 22%). In terms of grade and school level, studies predominantly examined the 4DSW in Grades 3, 5, 8, and 11 (n = 66 each; 59% each)—although the number of studies was fairly evenly distributed across elementary (n = 81; 73%), middle (n = 77; 69%), and high (n = 81; 73%) school levels. Most studies (n = 67; 60%) studies did not report the race/ethnicity of students in the study sample. Of the 44 studies that did report student race/ethnicity data, the vast majority (n = 38; 34%) had a majority of students who identified as white. The majority of students identified as Hispanic, Latino, or Spanish in four studies (4%), American Indian or Alaska Native in one study (1%), and Native Hawaiian or Other Pacific Islander in one study (1%). In terms of the type of 4DSW under investigation, most studies (n = 60; 54%) did not report what schools did on the fifth day for any districts in their sample. Of the 51 studies that
-4DSW SCOPING REVIEW TECHNICAL
-did report this information, most studies involved either schools offering no activities (n =35; 32%) or teacher in-service (n = 33; 30%) on the fifth day. Regarding states (see Figure 2), studies predominantly examined the 4DSW in Missouri (n = 33; 30%), Colorado (n = 26; 23%), Oklahoma (n = 18; 16%), Oregon (n = 17; 15%), New Mexico (n = 13; 12%), South Dakota (n = 12; 11%), and Idaho (n = 11; 10%).
-Empirical Research Evidence on the Priority of the Four-Day School Week
-Of these 111 published manuscripts, 3 (3%) reported empirical research evidence on the four-day school week as a priority: i.e., evidence on the extent of four-day school week policy adoption. Two journal articles were published in 2021: Anglum and Park (2021) analyzed data from 2010 through 2019, while Thompson et al. (2021) analyzed data from 1999 through 2019. Anglum and Park (2021) focused on district adoption of the four-day school week across the 516 school districts in Missouri, while Thompson et al. (2021) conducted a comprehensive national assessment across 24 states in which they identified at last one school district with at least one school that had adopted a four-day school week. These states are Alaska, Arizona, California, Colorado, Georgia, Idaho, Iowa, Kansas, Louisiana, Michigan, Minnesota, Missouri, Montana, Nebraska, Nevada, New Mexico, North Dakota, Oklahoma, Oregon, South Dakota, Texas, Utah, Washington, and Wyoming. One report from the National Center for Education Statistics (2020) used data from the 2017–18 National Teacher and Principal Survey to examine characteristics of the 2% of public schools where students attend classes fewer than five days per week.
-Empirical Research Evidence on the Effects and Equitability of the Four-Day School Week
-Of these 111 published manuscripts, 71 (64%) reported empirical research evidence on
-4DSW SCOPING REVIEW TECHNICAL
-the effectiveness of the four-day school week. To assess effectiveness, 15 studies (21% of the 71 effectiveness studies) used either difference-in-differences or descriptive statistics only, 14 studies (20%) used a before-after design, 13 (18%) used a between-group design without statistical controls (ANOVA, Mann-Whitney U test, MANOVA, t-test), seven (10%) used a between-group design with statistical controls (multilevel regression, multiple linear regression), five (7%) used a matched-pair design, and two (3%) used a computational model to examine simulated data. Effectiveness outcomes included educational achievement (n = 50; 70% of the 71 effectiveness studies), attendance (n = 22; 31%), health status and health-related behaviors (n = 8; 11%), teacher retention (n = 8; 11%), educational attainment (n = 7; 10%), school climate (n = 7; 10%), school disciplinary incidents (n = 5; 7%), household impacts (n = 4; 6%), and criminal activity (n = 2; 3%). Most effectiveness studies (n = 40; 56% of the 71 effectiveness studies) examined equitability of 4DSW effects: 28 effectiveness studies (39%) examined equitability of effects in relation to student ages or grade levels, eight (11%) by community rurality, eight (11%) by student socioeconomic status, six (8%) by student race and/or ethnicity, five (7%) by student sex or gender identity, four (6%) by student special education status, three (4%) by English language learner status, two (3%) by gifted student status, and one (1%) by immigrant status.
-Empirical Research Evidence on the Implementability of the Four-Day School Week
-Of these 111 published manuscripts, 69 (62%) reported empirical research evidence on implementation of the four-day school week. To assess implementation, 45 studies (41%) examined acceptability, 36 studies (32%) examined feasibility, and 29 studies (26%) examined resource use. The acceptability studies examined satisfaction with the 4DSW among teachers (n
-4DSW SCOPING REVIEW TECHNICAL
-= 33; 73% of the 45 acceptability studies), parents (n = 19; 42%), administrators (n = 17; 38%), students (n = 14; 31%), community members (n = 10; 22%), principals (n = 8; 18%), school staff (n = 8; 18%), superintendents (n = 7; 16%), and the athletics department, business owners, school board members, and counselors (n = 2 each; 4% each).
