@@ -18,10 +18,6 @@ pacman::p_load(janitor, tidyverse, rio, here, readxl, gt)
 #import data
 raw_df <- import(here("data", "4DSW_Data.xlsx")) 
 
-#import eligibility data
-elig_df <- read_excel(here("data", "4DSW_Scoping_Search_Data.xlsx"), sheet = "reference_level") %>% 
-  clean_names()
-
 #IMPORT ADDITIONAL CODING
 #import fifth day additional coding
 fif_df <- import(here("data", "4dsw_fifthday.xlsx")) %>% 
@@ -39,10 +35,6 @@ ref_df <- import(here("data", "4dsw_eligible_citations_links.xlsx")) %>%
 
 #import citations for all refids
 cit_df <- import(here("data", "4dsw_all_citations.xlsx")) %>% 
-  janitor::clean_names()
-
-#import linked references
-linked_df <- import(here("data", "4dsw_linked_references.xlsx")) %>% 
   janitor::clean_names()
 
 
