@@ -66,6 +66,13 @@ To replicate our results:
 1. Download the `Analysis_Script.Rmd` listed above from the repository and put it in the `code` folder you created
 1. Run `Analysis_Script.Rmd` to reproduce descriptive results
 
+## Outputs
+The output folder contains subfolders related to specific outputs or products:
+
+1. `appendices`: HTML appendices output from the `Analysis_Script.Rmd`
+2. `data_dashboard`: all data and code necessary to produce our [4DSW Data Dashboard](https://hedcoinstitute.uoregon.edu/dashboards/four-day-school-week-research-database)
+3. `technical_report`: all data and code necessary to produce our [Technical Report](https://hedco-institute.github.io/4DSW_Scoping_Review/technical_report/)
+
 ## Contact
 
 If you have any questions, concerns, or feedback, feel free to email Shaina Trevino at [strevino\@uoregon.edu](mailto:strevino@uoregon.edu)
