@@ -25,13 +25,11 @@ The excel data for this overview are included in the `data` folder of this repos
 
 | Data File | Description | File Structure |
 |-----------|:----------:|-------------|
-| `4DSW_Data.xlsx` | Extracted descriptive data on eligible studies | One row per included study |
+| `4dsw_study_data.xlsx` | Extracted descriptive data on eligible studies | One row per included study |
 | `4DSW_citation_data.xlsx` | Citation and eligibility information from each study | One row per reference ID (study citation) |
 | `4dsw_all_citations.xlsx` | Citation information for all references (including reports of main studies) | One row per reference ID |
-| `4dsw_corrauth_studrace.xlsx` | Corresponding author and student race/ethnicity information collected after analysis to display in the dashboard | One row per included study |
-| `4dsw_author_webpage_links.xlsx` | Links to public website for corresponding authors | One row per included study |
-| `4dsw_eligible_citation_links.xlsx` | Links to the full-text article for included studies | One row per included study |
 | `4dsw_linked_references.xlsx` | Reference information for additional reports of studies | One row per main reference and linked reference combo |
+| `4dsw_app_data.xlsx` | Study data transformed for presenting in the data dashboard | One row per study |
 
 ## Code
 
