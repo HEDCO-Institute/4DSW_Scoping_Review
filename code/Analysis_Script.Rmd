@@ -15,36 +15,38 @@ pacman::p_load(janitor, tidyverse, rio, here, readxl, gt)
 ```
 
 ```{r import}
-#import data
-raw_df <- import(here("data", "4DSW_Data.xlsx")) 
+# #import data
+# raw_df <- import(here("data", "4DSW_Data.xlsx")) 
+# 
+# #IMPORT ADDITIONAL CODING
+# #import fifth day additional coding
+# fif_df <- import(here("data", "4dsw_fifthday.xlsx")) %>%
+#   janitor::clean_names()
+# 
+# #import author contact and student race/ethnicity additional coding
+# add_df <- import(here("data", "4dsw_corrauth_studrace.xlsx")) %>% 
+#   janitor::clean_names()
 
-#IMPORT ADDITIONAL CODING
-#import fifth day additional coding
-fif_df <- import(here("data", "4dsw_fifthday.xlsx")) %>% 
-  janitor::clean_names() 
+# #import reference info citation links
+# ref_df <- import(here("data", "4dsw_eligible_citations_links.xlsx")) %>% 
+#   janitor::clean_names() %>% 
+#   rename(link = link_to_public_full_text,
+#          citation = bibliography)
 
-#import author contact and student race/ethnicity additional coding
-add_df <- import(here("data", "4dsw_corrauth_studrace.xlsx")) %>% 
-  janitor::clean_names()
+# #import citations for all refids
+# cit_df <- import(here("data", "4dsw_all_citations.xlsx")) %>% 
+#   janitor::clean_names()
 
-#import reference info citation links
-ref_df <- import(here("data", "4dsw_eligible_citations_links.xlsx")) %>% 
+
+
+#Updated 1/15/2025
+# raw_df <- import(here("data", "4dsw_study_data_2024-11-25.xlsx")) %>% 
+#   janitor::clean_names() %>% 
+#   distinct(across(-user), .keep_all = TRUE)
+
+raw_df <- import(here("data", "4dsw_study_data_2025-01-15.xlsx")) %>% 
   janitor::clean_names() %>% 
-  rename(link = link_to_public_full_text,
-         citation = bibliography)
-
-#import citations for all refids
-cit_df <- import(here("data", "4dsw_all_citations.xlsx")) %>% 
-  janitor::clean_names()
-
-
-
-#Updated 11/22/24
-raw_df <- import(here("data", "4dsw_study_data_2024-11-25.xlsx")) %>% 
-  janitor::clean_names() %>% 
-  distinct(across(-user), .keep_all = TRUE) %>% 
-  #temporarily until conflicts are resolved
-  distinct(refid, .keep_all = TRUE)
+  distinct(across(-user), .keep_all = TRUE) 
 
 elig_df <- read_excel(here("data", "4DSW_citation_data.xlsx")) %>% 
   clean_names()
@@ -179,8 +181,8 @@ single_df <- raw_df %>%
  select(refid, all_of(single_cat_vars))
 
 #transform fifth day data for table
-fif_td <- fif_df %>% 
-  pivot_longer(cols = fifth_day_recode_child_care:fifth_day_recode_not_reported, 
+fif_td <- raw_df %>% 
+  pivot_longer(cols = fifthday_child_care:fifthday_not_reported, 
                names_to = "variable", 
                values_to = "response") %>% 
   mutate(response = str_replace_all(response, 
@@ -190,12 +192,12 @@ fif_td <- fif_df %>%
   ungroup()
 
 #transform additional data for table
-add_td <- add_df %>% 
-  mutate(email = ifelse(grepl("@", corr_author_contact), corr_author_contact, NA))
+# add_td <- add_df %>% 
+#   mutate(email = ifelse(grepl("@", corr_author_contact), corr_author_contact, NA))
 
-race_td <- add_df %>% 
-  mutate(race_ethnicity_other_please_specify = str_remove_all(race_ethnicity_other_please_specify, "\\s*\\(please specify\\)")) %>% 
-  pivot_longer(cols = race_ethnicity_american_indian_and_or_alaska_native:race_ethnicity_other_please_specify, 
+race_td <- raw_df %>% 
+  mutate(raceethnicity_checkbox_other_please_specify = str_remove_all(raceethnicity_checkbox_other_please_specify, "\\s*\\(please specify\\)")) %>% 
+  pivot_longer(cols = raceethnicity_checkbox_american_indian_and_or_alaska_native:raceethnicity_checkbox_other_please_specify, 
                names_to = "variable", 
                values_to = "response") %>% 
   group_by(refid) %>%
@@ -203,9 +205,9 @@ race_td <- add_df %>%
   ungroup() %>% 
   mutate(race_ethnicity = ifelse(race_ethnicity == "", "Not Reported", race_ethnicity))
 
-#extract title from reference df
-ref_td <- ref_df %>% 
-  dplyr::select(refid, title)
+# #extract title from reference df
+# ref_td <- ref_df %>% 
+#   dplyr::select(refid, title)
 
 #extract cleaned citation from elig_df
 elig_subset <- elig_df %>% 
@@ -215,10 +217,11 @@ elig_subset <- elig_df %>%
 jd <- single_df %>% 
   left_join(td_longvar) %>% 
   left_join(fif_td) %>% 
-  left_join(add_td) %>% 
+  # left_join(add_td) %>% 
   left_join(race_td) %>% 
-  left_join(ref_td) %>% 
-  left_join(elig_subset)
+  # left_join(ref_td) %>% 
+  left_join(elig_subset) %>% 
+  left_join(select(cit_df, refid, title), by = "refid")
 
 #correct formatting
 td_study <- jd %>% 
@@ -227,7 +230,6 @@ td_study <- jd %>%
   mutate_all(~ str_remove_all(as.character(.), "Not Reported; |; Not Reported")) %>% 
   mutate(equity = str_replace_all(equity, c("Raceethnicity" = "Race/Ethnicity", "Sexgender" = "Sex/Gender", "Ell" = "ELL", 
                                             "Ses" = "SES", "Specialeducation" = "Special Education"))) %>% 
-  select(-user, -level) %>% 
    mutate(study_design = case_when(effectiveness_approach == "Hierarchical Linear Modeling" ~ "Between Groups - With Controls",
                                   effectiveness_approach == "Regression Adjustment" ~ "Between Groups - With Controls",
                                   effectiveness_approach == "ANOVA" ~ "Between Groups - Without Controls", 
@@ -257,10 +259,13 @@ td_study <- jd %>%
 ## Scoping Review Results to Confirm Tables
 
 ```{r tbl-results}
-data <- import(here("data", "4dsw_study_data_2024-11-25.xlsx")) %>% 
-  janitor::clean_names() %>% 
-  mutate(across(where(is.character), ~ na_if(., ""))) %>% 
-  distinct(refid, .keep_all = TRUE)
+# data <- import(here("data", "4dsw_study_data_2024-11-25.xlsx")) %>% 
+#   janitor::clean_names() %>% 
+#   mutate(across(where(is.character), ~ na_if(., ""))) %>% 
+#   distinct(refid, .keep_all = TRUE)
+
+data <- raw_df %>% 
+  mutate(across(where(is.character), ~ na_if(., "")))
 
 # Define function to summarize checkbox variables
 summarize_checkboxes <- function(data, prefix, filter_condition = NULL) {
@@ -421,7 +426,7 @@ print(a1_table)
 
 ```{r a1-save}
 #save as html
-gtsave(a1_table, filename = "appendix_1.html", path = here("outputs", "appendices"))
+#gtsave(a1_table, filename = "appendix_1.html", path = here("outputs", "appendices"))
 
 ```
 
@@ -470,7 +475,7 @@ print(a2_table)
 
 ```{r a2-save}
 #save as html
-gtsave(a2_table, filename = "appendix_2.html", path = here("outputs", "appendices"))
+#gtsave(a2_table, filename = "appendix_2.html", path = here("outputs", "appendices"))
 
 ```
 
@@ -619,7 +624,7 @@ htmltools::browsable(htmltools::HTML(html_code))
 
 ```{r a3-save}
 #save as HMTL
-writeLines(html_code, here("outputs", "appendices", "appendix_3.html"))
+#writeLines(html_code, here("outputs", "appendices", "appendix_3.html"))
 
 ```
 
@@ -631,7 +636,7 @@ tables_list <- list(appendix1 = a1_table %>% tab_header(title = NULL, subtitle =
                     appendix3 = combined_a3)
 
 #save as rds object to technical_report/images directory
-saveRDS(tables_list, file = "outputs/technical_report/images/tables_list.rds")
+#saveRDS(tables_list, file = "outputs/technical_report/images/tables_list.rds")
 
 ```
 
