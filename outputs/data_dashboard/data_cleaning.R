@@ -4,7 +4,37 @@ if (!require("pacman")) install.packages("pacman")
 pacman::p_load(janitor, tidyverse, rio, here)
 
 #import data
-raw_df <- import(here("data", "4DSW_Data.xlsx")) 
+# raw_df <- import(here("data", "4DSW_Data.xlsx")) 
+raw_df <- import(here("data", "4dsw_study_data.xlsx")) %>% 
+  janitor::clean_names() %>% 
+  distinct(across(-user), .keep_all = TRUE) 
+
+#for titles and citations
+cit_df <- import(here("data", "4dsw_all_citations.xlsx")) %>% 
+  janitor::clean_names()
+
+#format citation
+cit_td <- cit_df %>% 
+  mutate(citation = bibliography %>%
+           # Remove all text between and including ##
+           gsub("#[^#]*#", "", .) %>%
+           # Replace multiple spaces with a single space
+           gsub("\\s+", " ", .) %>%
+           # Remove periods except the last one
+           gsub("\\.(?![^.]*$)", "", ., perl = TRUE) %>%
+           # Remove trailing spaces
+           gsub("\\s+$", "", .) %>%
+           # Remove instances of () and (), 
+           gsub("\\(\\),\\s*", "", .) %>%
+           gsub("\\(\\)", "", .) %>%
+           # Replace ", ." with "."
+           gsub(",\\s*\\.", ".", .) %>% 
+           # Replace " ." with "."
+           gsub("\\s*\\.", ".", .) %>% 
+           # Replace " ," with ","
+           gsub("\\s*\\,", ",", .)) %>% 
+  select(-bibliography)
+
 
 
 #create dataframe to merge state abbreviations
@@ -34,13 +64,13 @@ df_long <- raw_df %>%
                              str_detect(variable, "^equity") ~ "equity",
                              str_detect(variable, "^evidence") ~ "evidence_domain",
                              TRUE ~ variable),
-    category = case_when(str_detect(variable, "^community") & response == "Yes" ~  value, 
-                         str_detect(variable, "^state") & response == "Yes" ~  value,
-                         str_detect(variable, "^grade") & response == "Yes" ~  value,
-                         str_detect(variable, "^school") & response == "Yes" ~  value,
-                         str_detect(variable, "^effectiveness") & response == "Yes" ~  value,
-                         str_detect(variable, "^equity") & response == "Yes" ~  value,
-                         str_detect(variable, "^evidence") & response == "Yes" ~ value,
+    category = case_when(str_detect(variable, "^community") & !is.na(response) ~  value, 
+                         str_detect(variable, "^state") & !is.na(response) ~  value,
+                         str_detect(variable, "^grade") & !is.na(response) ~  value,
+                         str_detect(variable, "^school") & !is.na(response) ~  value,
+                         str_detect(variable, "^effectiveness") & !is.na(response) ~  value,
+                         str_detect(variable, "^equity") & !is.na(response) ~  value,
+                         str_detect(variable, "^evidence") & !is.na(response) ~ value,
                          TRUE ~ NA)) %>% 
   mutate(category = case_when(category == "Newmexico" ~ "New Mexico",
                               category == "Southdakota" ~ "South Dakota",
@@ -54,41 +84,64 @@ df_long <- raw_df %>%
   select(-category) %>% 
   rename(category = abbrev)
 
+df_data_years <- raw_df %>% 
+  dplyr::select(refid, starts_with("data_years")) %>% 
+  mutate(
+    combined_years = pmap_chr(select(., starts_with("data_years_select")), function(...) {
+      years <- c(...)  # Combine all selected columns into a vector
+      years <- sort(as.numeric(na.omit(years)))  # Remove NA and sort
+      
+      # Identify ranges
+      if (length(years) == 0) {
+        return(NA_character_)
+      }
+      ranges <- split(years, cumsum(c(1, diff(years)) != 1))
+      range_strings <- sapply(ranges, function(range) {
+        if (length(range) == 1) {
+          return(as.character(range))
+        } else {
+          return(paste0(range[1], "-", range[length(range)]))
+        }
+      })
+      paste(range_strings, collapse = "; ")
+    })
+  ) %>% 
+  rename(data_years = combined_years) %>% 
+  select(refid, data_years)
+
 td_longvar <- df_long %>%
   group_by(refid, new_var_name) %>%
   summarise(category_value = paste(category[!is.na(category)], collapse = "; "), .groups = "drop_last") %>%
   pivot_wider(names_from = new_var_name, values_from = category_value) %>% 
-  ungroup()
+  ungroup() %>% 
+  left_join(df_data_years)
 
 #list of single variables (to aggregate across id only)
-single_cat_vars <- c("author", "publication_year", "publication_type", "publisher", "student_type", "student_discipline",
-                     "data_years", "effectiveness_approach")
+single_cat_vars <- c("author_last_name", "corr_author_name", "publication_year", "publication_type", "publisher", "student_type", "student_discipline",
+                       "effectiveness_approach", "corr_author_link", "citation_link") #"data_years",
 
 #subset of single single aggregated variables
 single_df <- raw_df %>%
  select(refid, all_of(single_cat_vars))
 
 
-#import reference info citation links
-ref_df <- import(here("data", "4dsw_eligible_citations_links.xlsx")) %>% 
-  janitor::clean_names() %>% 
-  rename(link = link_to_public_full_text,
-         citation = bibliography)
+# #import reference info citation links
+# ref_df <- import(here("data", "4dsw_eligible_citations_links.xlsx")) %>% 
+#   janitor::clean_names() %>% 
+#   rename(link = link_to_public_full_text,
+#          citation = bibliography)
 
-#manually add links 
-ref_td <- ref_df %>% 
-  mutate(link = ifelse(is.na(link), other_public_link, link))
+# #manually add links 
+# ref_td <- ref_df %>% 
+#   mutate(link = ifelse(is.na(link), other_public_link, link))
 
-#import fifth day additional coding
-fif_df <- import(here("data", "4dsw_fifthday.xlsx")) %>% 
-  janitor::clean_names() 
+# #import fifth day additional coding
+# fif_df <- import(here("data", "4dsw_fifthday.xlsx")) %>% 
+#   janitor::clean_names() 
 
 #transform fifth day data for table
-fif_td <- fif_df %>% 
- # mutate(fifth_day_recode_extracuriculars_clubs_sports = ifelse(fifth_day_recode_extracuriculars_clubs_sports == "Extracuriculars (clubs, sports)",
-  #                                                              "Extracurriculars (clubs/sports)",
-   #                                                             fifth_day_recode_extracuriculars_clubs_sports))  %>% 
-  pivot_longer(cols = fifth_day_recode_child_care:fifth_day_recode_not_reported, 
+fif_td <- raw_df %>% 
+  pivot_longer(cols = fifthday_child_care:fifthday_not_reported, 
                names_to = "variable", 
                values_to = "response") %>% 
   mutate(response = str_replace_all(response, 
@@ -97,17 +150,17 @@ fif_td <- fif_df %>%
   summarise(fifth_day_activities = paste(response[!is.na(response)], collapse = "; "), .groups = "drop_last") %>%
   ungroup()
 
-#import author contact and student race/ethnicity additional coding
-add_df <- import(here("data", "4dsw_corrauth_studrace.xlsx")) %>% 
-  janitor::clean_names()
+# #import author contact and student race/ethnicity additional coding
+# add_df <- import(here("data", "4dsw_corrauth_studrace.xlsx")) %>% 
+#   janitor::clean_names()
 
-#transform additional data for table
-add_td <- add_df %>% 
-  mutate(email = ifelse(grepl("@", corr_author_contact), corr_author_contact, NA))
+# #transform additional data for table
+# add_td <- add_df %>% 
+#   mutate(email = ifelse(grepl("@", corr_author_contact), corr_author_contact, NA))
 
-race_td <- add_df %>% 
-  mutate(race_ethnicity_other_please_specify = str_remove_all(race_ethnicity_other_please_specify, "\\s*\\(please specify\\)")) %>% 
-  pivot_longer(cols = race_ethnicity_american_indian_and_or_alaska_native:race_ethnicity_other_please_specify, 
+race_td <- raw_df %>% 
+  mutate(raceethnicity_checkbox_other_please_specify = str_remove_all(raceethnicity_checkbox_other_please_specify, "\\s*\\(please specify\\)")) %>% 
+  pivot_longer(cols = raceethnicity_checkbox_american_indian_and_or_alaska_native:raceethnicity_checkbox_other_please_specify, 
                names_to = "variable", 
                values_to = "response") %>% 
   group_by(refid) %>%
@@ -115,34 +168,37 @@ race_td <- add_df %>%
   ungroup() %>% 
   mutate(race_ethnicity = ifelse(race_ethnicity == "", "Not Reported", race_ethnicity))
 
-#import author webpage links
-auli_df <- import(here("data", "4dsw_author_webpage_links.xlsx")) 
+# #import author webpage links
+# auli_df <- import(here("data", "4dsw_author_webpage_links.xlsx")) 
 
-auli_td <- auli_df %>%    
-  distinct(corr_author_name, .keep_all = TRUE) %>% 
-  rename(author_link = `Web Link`) %>% 
-  select(-refid)
+# auli_td <- raw_df %>%    
+# #  distinct(corr_author_name, .keep_all = TRUE) %>% 
+# #  rename(author_link = `Web Link`) %>% 
+#   select(refid, ends_with("link"))
 
 #merge data together
 jd <- single_df %>% 
   left_join(td_longvar) %>% 
-  left_join(ref_td) %>% 
+  #left_join(ref_td) %>% 
   left_join(fif_td) %>% 
-  left_join(add_td) %>% 
+  #left_join(add_td) %>% 
   left_join(race_td) %>% 
-  left_join(auli_td)
+  left_join(select(cit_td, refid, title, citation), by = "refid")
+# %>% 
+#   left_join(auli_td)
 
 #correct formatting
 td <- jd %>% 
-  mutate_all(~ ifelse(is.na(.) | .x == -999 | . == "", "Not Reported", .)) %>% 
+  mutate_all(~ ifelse(is.na(.) | .x == -999 | . == "" | . == "None", "Not Reported", .)) %>% 
   mutate_all(~ str_remove_all(as.character(.), "-999; |; -999")) %>% 
   mutate_all(~ str_remove_all(as.character(.), "Not Reported; |; Not Reported")) %>% 
   mutate(equity = str_replace_all(equity, c("Raceethnicity" = "Race/Ethnicity", "Sexgender" = "Sex/Gender", "Ell" = "ELL", 
-                                            "Ses" = "SES", "Specialeducation" = "Special Education"))) %>% 
-  select(-user, -level)
+                                            "Ses" = "SES", "Specialeducation" = "Special Education")),
+         across(c(student_type, student_discipline), ~ if_else(. == "Not Reported" & publication_type != "Student", "Not Applicable", .))) 
 
 #export to outputs/data folder to deploy app
-rio::export(td, here("outputs", "data_dashboard", "data", "4dsw_app_data.xlsx"))
+# rio::export(td, here("outputs", "data_dashboard", "data", "4dsw_app_data.xlsx"))
+# rio::export(td, here("data", "4dsw_app_data.xlsx"))
 
 #SUMMARY STATS
 

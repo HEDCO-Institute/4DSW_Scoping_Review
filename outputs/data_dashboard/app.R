@@ -4,9 +4,10 @@
 if (!require("pacman")) install.packages("pacman")
 pacman::p_load(tidyverse, rio, here, DT, shiny, plotly, openxlsx)
 
-#import cleaned data
+# Import cleaned data
 cleaned_df <- import(here("data", "4dsw_app_data.xlsx"))
 
+# Transform data for dashboard
 cleaned_dashboard_df <- cleaned_df %>% 
   rename(study_design = effectiveness_approach,
          outcome_domain_studied = effectiveness,
@@ -14,63 +15,81 @@ cleaned_dashboard_df <- cleaned_df %>%
          `Student Race/Ethnicity` = race_ethnicity,
          school_type = school_level,
          `Community Type (Rurality)` = community) %>% 
-  mutate(study_design = case_when(study_design == "Hierarchical Linear Modeling" ~ "Between Groups - With Controls",
-                                  study_design == "Regression Adjustment" ~ "Between Groups - With Controls",
-                                  study_design == "ANOVA" ~ "Between Groups - Without Controls", 
-                                  study_design == "MANOVA" ~ "Between Groups - Without Controls", 
-                                  study_design == "Mann-Whitney U test" ~ "Between Groups - Without Controls", 
-                                  study_design == "T-Test" ~ "Between Groups - Without Controls", 
-                                  study_design == "No" ~ "Not Reported",
-                                  TRUE ~ study_design)) %>% 
   mutate(study_design = ifelse(study_design == "Not Reported", "Not Applicable", study_design),
          outcome_domain_studied = str_replace_all(outcome_domain_studied, c("Retention" = "Staff/Teacher Retention",
                                                                             "Climate" = "School Climate",
                                                                             "Incidents" = "School Disciplinary Incidents",
                                                                             "Households" = "Household Impacts",
                                                                             "Crime" = "Criminal Activity")),
+         outcome_domain_studied = if_else(!str_detect(evidence_domain, "(?i)Effectiveness"), "Not Applicable", outcome_domain_studied),
          equity_domain_studied = str_replace_all(equity_domain_studied, c("Age" = "Age or Grade Level",
                                                                            "Rurality" = "Community Type (Rurality)",
                                                                            "ELL" = "English Language Learner",
                                                                            "Gifted" = "Gifted Student Status",
-                                                                           "Immigrant" = "Immigration Status",
-                                                                          "Not Reported" = "Not Reported or Applicable")))
+                                                                           "Immigrant" = "Immigration Status")),
+         equity_domain_studied = if_else(!str_detect(evidence_domain, "(?i)Equity"), "Not Applicable", equity_domain_studied),
+         # Extract implementation-related terms and create implementation_domain
+         implementation_domain = str_extract_all(evidence_domain, "(?i)(acceptability|feasibility|resource)") %>%
+           lapply(function(x) str_replace_all(x, "Resource", "Resource Use")) %>%
+           sapply(paste, collapse = "; "),
+         # Create new_evidence_domain excluding extracted terms
+         new_evidence_domain = str_remove_all(evidence_domain, "(?i)(acceptability|feasibility|resource)") %>%
+           str_replace_all(";;", ";") %>%  
+           str_trim()) %>%
+   mutate(implementation_domain = str_remove(implementation_domain, "^;\\s*"),
+          new_evidence_domain = str_remove(new_evidence_domain, "^;\\s*"))
 
+# Clean up empty implementation_domain values to NA
+cleaned_dashboard_df <- cleaned_dashboard_df %>%
+  mutate(across(
+    everything(), 
+    ~ . %>%
+      str_replace_all(";;+", ";") %>%    # Replace multiple semicolons with a single semicolon
+      str_remove("^;\\s*") %>%           # Remove leading semicolons
+      str_remove("\\s*;\\s*$") %>%       # Remove trailing semicolons, even if followed by a space
+      str_squish(),                      # Remove extra spaces
+    .names = "{.col}"                   # Keeps the original column names
+  )) %>%
+  mutate(across(ends_with("domain"), ~ifelse(. == "", "Not Applicable", .))) %>% 
+  rename(implementation_domain_studied = implementation_domain)
   
 
+  
+# Create subset for users to download
 cleaned_df_to_export <- cleaned_dashboard_df %>% 
   select(publication_year, title, corr_author_name, data_years, `Community Type (Rurality)`, school_type, grade_level, `Student Race/Ethnicity`,
-         state, fifth_day_activities, study_design, outcome_domain_studied, equity_domain_studied, #evidence_domain,
-         publication_type, publisher, citation, link, author_link)
+         state, fifth_day_activities, outcome_domain_studied, equity_domain_studied, implementation_domain_studied, #evidence_domain,
+         citation, citation_link, corr_author_link) #publication_type, publisher, study_design, 
   
 
-#transform for data table
+# Transform for data table
 td <- cleaned_dashboard_df %>% 
-  mutate(linked_title = ifelse(link != "Not Reported", paste0("<a href='", link, "' target='_blank'>", title, "</a>"), title),
-         corresponding_author = ifelse(author_link != "Not Reported", paste0("<a href='", author_link, "' target='_blank'>", corr_author_name, "</a>"), corr_author_name),
+  mutate(linked_title = ifelse(citation_link != "Not Reported", paste0("<a href='", citation_link, "' target='_blank'>", title, "</a>"), title),
+         corresponding_author = ifelse(corr_author_link != "Not Reported", paste0("<a href='", corr_author_link, "' target='_blank'>", corr_author_name, "</a>"), corr_author_name),
          publication_year = as.numeric(publication_year)) %>% 
   arrange(desc(publication_year), title) %>% 
   rename(title_text = title, 
          author_text = corr_author_name,
-         title_link = link,
+         title_link = citation_link,
          title = linked_title) %>% 
   select(publication_year, title, corresponding_author, data_years, `Community Type (Rurality)`, school_type, grade_level, `Student Race/Ethnicity`,
-         state, fifth_day_activities, study_design, outcome_domain_studied, equity_domain_studied, #evidence_domain, #INTERNAL ONLY
-         publication_type, citation, title_text, author_text, title_link, author_link) #, publisher, citation) #INTERNAL ONLY
+         state, fifth_day_activities, outcome_domain_studied, equity_domain_studied, implementation_domain_studied, #evidence_domain, #INTERNAL ONLY
+         citation, title_text, author_text, title_link, corr_author_link) #study_design, publication_type, publisher, citation) #INTERNAL ONLY 
 
 
-#define filter choices
+# Define filter choices
 states <- state.abb
 grades <- c("K", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12")
 effect_choices <- c("Approach", "Achievement", "Attainment", "Attendance", "Criminal Activity", 
                     "Health", "Household Impacts", "School Climate", 
                      "School Disciplinary Incidents", "Staff/Teacher Retention")
-fifthday_choices <- c("Child Care", "Nothing (shut down school)",
-                      "Student Instruction", "Teacher In-Service")
+fifthday_choices <- c("Child Care", "Extracurriculars (clubs, sports)", "Nothing (shut down school)",
+                      "Student Instruction", "Teacher In-Service", "Trips (educational/field)")
 race_ethnicity_choices <- c("American Indian and/or Alaska Native", "Asian", "Black or African American",
                             "Hispanic, Latino, or Spanish", "Native Hawaiian/Other Pacific Islander",
                             "White", "Other")
 
-#function to capitalize column names
+# Create function to capitalize column names
 capitalize_colnames <- function(df) {
   new_names <- colnames(df) %>%
     lapply(function(name) {
@@ -272,23 +291,25 @@ ui <- fluidPage(
             
             tags$ul(
               tags$li(HTML("<strong>Child care:</strong> School-provided childcare")),
+              tags$li(HTML("<strong>Extracurriculars:</strong> Extracurricular activities such as clubs or sports")),
               tags$li(HTML("<strong>Nothing (shut down school):</strong> Schools that were not open to students on the fifth day")),
               tags$li(HTML("<strong>Student instruction:</strong> Schools that offered student instruction for at least one off-day per school year (full or partial day)")),
-              tags$li(HTML("<strong>Teacher in-service:</strong> Schools that offered teacher in-service on at least one off-day per school year (full or partial day)"))
+              tags$li(HTML("<strong>Teacher in-service:</strong> Schools that offered teacher in-service on at least one off-day per school year (full or partial day)")),
+              tags$li(HTML("<strong>Trips:</strong> School outings such as educational or field trips"))
             ),
             
-            h4("Study Design:"),
-            p("The statistical approach or design of the study"),
-            
-            tags$ul(
-              tags$li(HTML("<strong>Before-after study:</strong> Studies that test differences in outcomes before and after a school switches from a five-day to a four-day week")),
-              tags$li(HTML("<strong>Between-group – with controls:</strong> Studies that used multilevel regression or multiple linear regression to examine the relationship between four-day school weeks and outcomes interest while controlling for confounding variables.")),
-              tags$li(HTML("<strong>Between-group – without controls:</strong> Studies that used ANOVA, MANOVA, Mann-Whitney U tests, or t-tests to test differences in outcomes between four-day school week and five-day school week outcomes without controlling for covariates")),
-              tags$li(HTML("<strong>Computational model:</strong> Use of mathematical models and simulated data.")),
-              tags$li(HTML("<strong>Descriptive statistics only:</strong> Studies that presented descriptive information and did not perform inferential statistical analyses")),
-              tags$li(HTML("<strong>Difference-in-differences:</strong> Studies that analyze the difference in outcomes before and after a school switches to a four-day week compared to outcomes for schools that remained on a five-day week")),
-              tags$li(HTML("<strong>Matched pair design:</strong> Studies that match samples based on characteristics such as demographic information, school location or school type before testing outcomes between four-day and five-day week schools."))
-            ),
+            # h4("Study Design:"),
+            # p("The statistical approach or design of the study"),
+            # 
+            # tags$ul(
+            #   tags$li(HTML("<strong>Before-after study:</strong> Studies that test differences in outcomes before and after a school switches from a five-day to a four-day week")),
+            #   tags$li(HTML("<strong>Between-group – with controls:</strong> Studies that used multilevel regression or multiple linear regression to examine the relationship between four-day school weeks and outcomes interest while controlling for confounding variables.")),
+            #   tags$li(HTML("<strong>Between-group – without controls:</strong> Studies that used ANOVA, MANOVA, Mann-Whitney U tests, or t-tests to test differences in outcomes between four-day school week and five-day school week outcomes without controlling for covariates")),
+            #   tags$li(HTML("<strong>Computational model:</strong> Use of mathematical models and simulated data.")),
+            #   tags$li(HTML("<strong>Descriptive statistics only:</strong> Studies that presented descriptive information and did not perform inferential statistical analyses")),
+            #   tags$li(HTML("<strong>Difference-in-differences:</strong> Studies that analyze the difference in outcomes before and after a school switches to a four-day week compared to outcomes for schools that remained on a five-day week")),
+            #   tags$li(HTML("<strong>Matched pair design:</strong> Studies that match samples based on characteristics such as demographic information, school location or school type before testing outcomes between four-day and five-day week schools."))
+            # ),
             
             h4("Outcome Domain Studied:"),
             p("Variables researchers reported as outcomes. For this review, we grouped outcomes that were similar. For example, “Health” refers to any kind of health status or health-related behaviors."),
@@ -320,13 +341,12 @@ ui <- fluidPage(
                  tags$li(HTML("<strong>Special Education:</strong> Student special education status"))
                  ),
             
-            h4("Publication Type:"),
+            h4("Implementation Domain Studied:"),
             
                tags$ul(
-                 tags$li(HTML("<strong>Journal:</strong> Academic peer-reviewed journal")),
-                 tags$li(HTML("<strong>Preprint:</strong> Manuscript that has been shared prior to journal peer-review")),
-                 tags$li(HTML("<strong>Report:</strong> Self-published manuscripts serving as the final version of record (these may or may not have been peer-reviewed)")),
-                 tags$li(HTML("<strong>Student:</strong> Undergraduate degree theses, Master’s degree theses, and doctoral dissertations"))
+                 tags$li(HTML("<strong>Acceptability:</strong> Examined the extent to which the 4DSW is acceptable to key stakeholder groups")),
+                 tags$li(HTML("<strong>Feasibility:</strong> Examined how the intervention was implemented (e.g., barriers/facilitators to implementation, degree to which it was implemented as designed within the intended context and its existing resources)")),
+                 tags$li(HTML("<strong>Resource Use:</strong>  Examined the resource requirements/implications of implementing the intervention (e.g., inputs/costs, cost-effectiveness/benefit)"))
                )
              )
   ))
@@ -473,13 +493,29 @@ server <- function(input, output, session) {
     }
 
     # Filter by fifth day activity
+    # if (!is.null(input$fifthday_filter) && length(input$fifthday_filter) > 0) {
+    #   filter_expr_fifthday <- do.call(cbind, lapply(input$fifthday_filter, function(fifthday_filter) {
+    #     grepl(fifthday_filter, filtered_data$fifth_day_activities, ignore.case = TRUE)
+    #   }))
+    #   filtered_data <- filtered_data %>%
+    #     filter(rowSums(filter_expr_fifthday) > 0)
+    # }
+    
+    # Fix to include parentheses 
     if (!is.null(input$fifthday_filter) && length(input$fifthday_filter) > 0) {
-      filter_expr_fifthday <- do.call(cbind, lapply(input$fifthday_filter, function(fifthday_filter) {
-        grepl(fifthday_filter, filtered_data$fifth_day_activities, ignore.case = TRUE)
-      }))
+      # Escape any special characters in the filter options
+      escaped_filters <- sapply(input$fifthday_filter, function(x) {
+        stringr::str_replace_all(x, "([\\(\\)\\[\\]\\{\\}\\|\\^\\$\\.\\*\\+\\?\\\\])", "\\\\\\1")
+      })
+      
+      # Combine the filters into a single regex pattern
+      filter_pattern <- paste(escaped_filters, collapse = "|")
+      
+      # Apply the filter
       filtered_data <- filtered_data %>%
-        filter(rowSums(filter_expr_fifthday) > 0)
+        filter(stringr::str_detect(fifth_day_activities, regex(filter_pattern, ignore_case = TRUE)))
     }
+    
 
 
     # # Filter by race/ethnicity
@@ -511,7 +547,7 @@ server <- function(input, output, session) {
 
     if (nrow(filtered_data) > 0) {
       filtered_data <- filtered_data %>% 
-        select(-author_text, -title_text, -author_link, -title_link, -citation)
+        select(-author_text, -title_text, -corr_author_link, -title_link, -citation)
       
       colnames(filtered_data) <- capitalize_colnames(filtered_data)
       datatable(filtered_data, 
@@ -598,7 +634,10 @@ server <- function(input, output, session) {
           !!var_name := ifelse(!!sym(var_name) == "-999", "Not Reported", !!sym(var_name)),
           percent = paste0(round(n / nrow(data) * 100, 2), "%")
         ) %>%
-        arrange(desc(!!sym(var_name) != "Not Reported"), desc(n))
+        arrange(
+          desc(!!sym(var_name) != "Not Applicable"),  # Push "Not Applicable" to the end
+          desc(!!sym(var_name) != "Not Reported"),    # Push "Not Reported" to the end
+          desc(n))
       
       return(result)
     }
@@ -606,8 +645,8 @@ server <- function(input, output, session) {
     
     # List of variables
     vars_list <- c("Community Type (Rurality)", "School Type", "Grade Level", "Student Race/Ethnicity", 
-                   "Fifth Day Activities", "Study Design", "Outcome Domain Studied", 
-                   "Equity Domain Studied", "Publication Type")
+                   "Fifth Day Activities", "Outcome Domain Studied", 
+                   "Equity Domain Studied", "Implementation Domain Studied")
     
     # Use lapply to process data for each variable
     tables_list <- lapply(vars_list, process_summary_tables, data = filtered_data)
@@ -642,21 +681,21 @@ server <- function(input, output, session) {
           h3("Fifth Day Activities Table"), 
           rendered_tables_list[[5]]
       ),
+      # div(class = "table",
+      #     h3("Study Design Table"), 
+      #     rendered_tables_list[[6]]
+      # ),
       div(class = "table",
-          h3("Study Design Table"), 
+          h3("Outcome Domain Table"), 
           rendered_tables_list[[6]]
       ),
       div(class = "table",
-          h3("Outcome Domain Table"), 
+          h3("Equity Domain Table"), 
           rendered_tables_list[[7]]
       ),
       div(class = "table",
-          h3("Equity Domain Table"), 
+          h3("Implementation Domain Table"), 
           rendered_tables_list[[8]]
-      ),
-      div(class = "table",
-          h3("Publication Type Table"), 
-          rendered_tables_list[[9]]
       ),
     )
     
@@ -702,7 +741,7 @@ server <- function(input, output, session) {
         select(-corresponding_author, -title) %>% 
         rename(title = title_text,
                corr_author_name = author_text,
-               link = title_link) %>% 
+               citation_link = title_link) %>% 
         select(publication_year, title, corr_author_name, everything())
       
       write.xlsx(filtered_data_export, file)  # Write the filtered data
@@ -716,3 +755,5 @@ server <- function(input, output, session) {
   
 
 shinyApp(ui, server)
+
+#rsconnect::deployApp(appDir = "outputs/data_dashboard", appName = "4dsw_data_dashboard")#file needs to be .R; files need to be in data_dashboard folder; account needs to be setup
