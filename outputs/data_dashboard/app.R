@@ -4,6 +4,10 @@
 if (!require("pacman")) install.packages("pacman")
 pacman::p_load(tidyverse, rio, here, DT, shiny, plotly, openxlsx)
 
+# Specify update dates
+last_search <- "November 2024"
+next_search <- "March 2025"
+
 # Import cleaned data
 cleaned_df <- import(here("data", "4dsw_app_data.xlsx"))
 
@@ -349,7 +353,24 @@ ui <- fluidPage(
                  tags$li(HTML("<strong>Resource Use:</strong>  Examined the resource requirements/implications of implementing the intervention (e.g., inputs/costs, cost-effectiveness/benefit)"))
                )
              )
+  ),
+# div(
+#   style = "text-align: left; padding: 10px; background-color: #f1f1f1; width: 100%; font-size: 14px; margin-top: 15px;",
+#   p(
+#     HTML("<i class='fa fa-calendar'></i> Last search of the literature: <b>", last_search, "</b>"),
+#     HTML("<br><i class='fa fa-refresh'></i> Updated search expected: <b>", next_search, "</b>")
+#   ))
+fluidRow(
+  column(12,  # Makes it span the full width
+         div(
+           style = "text-align: left; padding: 10px; background-color: #f4f4f4; width: 100%; font-size: 14px; margin-top: 15px;",
+           p(
+             HTML("<i class='fa fa-calendar'></i> Last search of the literature: <b>", last_search, "</b>"),
+             HTML("<br><i class='fa fa-refresh'></i> Updated search expected: <b>", next_search, "</b>")
+           )
+         )
   ))
+)
 
 
 server <- function(input, output, session) {
