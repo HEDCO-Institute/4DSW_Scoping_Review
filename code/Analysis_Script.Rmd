@@ -48,10 +48,10 @@ raw_df <- import(here("data", "4dsw_study_data.xlsx")) %>%
   janitor::clean_names() %>% 
   distinct(across(-user), .keep_all = TRUE) 
 
-elig_df <- read_excel(here("data", "4DSW_citation_data.xlsx")) %>% 
+elig_df <- read_excel(here("data", "4dsw_eligibility_data.xlsx")) %>% 
   clean_names()
 
-linked_df <- import(here("data", "4dsw_linked_references.xlsx")) %>% 
+linked_df <- import(here("data", "4dsw_linked_references.csv")) %>% 
   janitor::clean_names()
 
 cit_df <- import(here("data", "4dsw_all_citations.xlsx")) %>% 
