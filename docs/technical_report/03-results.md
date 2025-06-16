@@ -3,7 +3,7 @@
 
 # Results
 
-Of 5,088 unique citations, we excluded 3,961 citations during title and abstract screening. Of the 552 remaining citations we could locate for full-text eligibility assessment, we excluded 375 citations. We included the remaining 133 studies (reported in  manuscripts) in our scoping review (see [Figure 1](#fig-flow-diagram)).
+Of 5,088 unique citations, we excluded 3,961 citations during title and abstract screening. Of the 552 remaining citations we could locate for full-text eligibility assessment, we excluded 375 citations. We included the remaining 133 studies (reported in 159 manuscripts) in our scoping review (see [Figure 1](#fig-flow-diagram)).
 
 ## Characteristics of Sources of Evidence
 

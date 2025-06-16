@@ -29,7 +29,7 @@ pull_summary_value <- function(df, category_filter, column) {
 
 # Results
 
-Of `r format_thousands(number_search_results)` unique citations, we excluded `r format_thousands(number_dropped)` citations during title and abstract screening. Of the `r format_thousands(number_kept)` remaining citations we could locate for full-text eligibility assessment, we excluded `r format_thousands(number_ineligible)` citations. We included the remaining `r format_thousands(number_eligible)` studies (reported in `r nrow(number_eligible_reports)` manuscripts) in our scoping review (see [Figure 1](#fig-flow-diagram)).
+Of `r format_thousands(number_search_results)` unique citations, we excluded `r format_thousands(number_dropped)` citations during title and abstract screening. Of the `r format_thousands(number_kept)` remaining citations we could locate for full-text eligibility assessment, we excluded `r format_thousands(number_ineligible)` citations. We included the remaining `r format_thousands(number_eligible)` studies (reported in `r number_eligible_reports` manuscripts) in our scoping review (see [Figure 1](#fig-flow-diagram)).
 
 ## Characteristics of Sources of Evidence
 
