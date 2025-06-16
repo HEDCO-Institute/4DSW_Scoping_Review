@@ -1,3 +1,0 @@
-# Objective
-
-The objective of this scoping review is to examine the extent of empirical research evidence on the four-day school week (4DSW) at primary and secondary schools in the United States. Compared to traditional systematic reviews estimating the effects of interventions, scoping reviews explore the breadth of the literature on a topic, identify the types of available evidence, and chart and summarize this evidence (Peters et al., 2020). Scoping reviews are particularly useful for examining evidence on emerging topics to inform specific questions that can be valuably answered in future evidence syntheses. Consequently, a scoping review can provide useful insights about the nature and state of available research evidence in the 4DSW literature.

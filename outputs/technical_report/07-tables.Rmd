@@ -1,21 +1,443 @@
 # Tables
 
 ```{r tab_path, include = FALSE}
-t1_path <- here::here("outputs", "technical_report", "images", "table1_eligibility.png")
+library(gt)
+library(tibble)
+library(knitr)
+library(kableExtra)
+# Source analysis script
+source(here::here("outputs", "technical_report", "scripts", "analysis_script.R"))
 
-t2_path <- here::here("outputs", "technical_report", "images", "table2_characteristics.png")
-
-t3_path <- here::here("outputs", "technical_report", "images", "table3_research.png")
 ```
+
 
 ## Table 1. Eligibility criteria for including and escluding studies in the scoping review
 
-![](`r t1_path` "Table 1")
+```{r t1, echo = FALSE, message = FALSE, warning = FALSE}
+# Define PICO elements
+population_include    <- "School stakeholders"
+population_exclude    <- "None"
 
-## Table 2. Characteristics of included sources of evidence on the four-day school week
+concept_include       <- "Four-day school week"
+concept_exclude       <- "Other changes to the traditional school calendar (e.g., extended school year)"
 
-![](`r t2_path` "Table 2")
+context_include       <- "Primary and secondary schools in the United States"
+context_exclude       <- "Pre-schools, postsecondary schools, and schools outside the United States"
 
-## Table 3. Types of available research evidence on the four-day school week
+design_include        <- "Any empirical design"
+design_exclude        <- "Conceptual and opinion articles"
 
-![](`r t3_path` "Table 3")
+publications_include  <- "Research reports in English"
+publications_exclude  <- "Reports in a language other than English and non-research reports (e.g., popular media)"
+
+# Assemble into a data frame
+criteria_df <- tibble(
+  Criteria = c("Population",
+               "Concept",
+               "Context",
+               "Study Design",
+               "Publications"),
+  Include  = c(population_include,
+               concept_include,
+               context_include,
+               design_include,
+               publications_include),
+  Exclude  = c(population_exclude,
+               concept_exclude,
+               context_exclude,
+               design_exclude,
+               publications_exclude)
+)
+
+# Render as an HTML table
+criteria_df %>%
+  kable(
+    format    = "html",
+    align     = c("l","l","l"),
+    escape    = TRUE
+  ) %>%
+  kable_styling(
+    full_width = FALSE,
+    position   = "center",
+    bootstrap_options = c("striped", "hover", "condensed")
+  )
+
+```
+
+
+## Table 2. Characteristics of included sources of evidence on the four-day school week {#tbl1-study-char}
+
+```{r t2,  echo = FALSE, message = FALSE, warning = FALSE}
+# Helper function
+add_table2_label <- function(df, section) {
+  df %>%
+    mutate(
+      Section      = section,
+      Characteristic = stringr::str_to_sentence(Category),
+      Median       = NA_character_,
+      Range        = NA_character_,
+      indent       = TRUE
+    ) %>%
+    rename(N = N, Percent = Percentage) %>%
+    select(Section, Characteristic, N, Percent, Median, Range, indent)
+}
+
+pubtype_df <- publication_summary_specific %>%
+  add_table2_label("Publication Type") %>%
+  mutate(
+    Characteristic = case_when(
+      Characteristic == "Peer-reviewed journal article" ~ "Journal",
+      Characteristic == "Student dissertation or thesis" ~ "Student",
+      TRUE ~ Characteristic
+    )
+  )
+
+studenttype_df <- add_table2_label(student_type_summary, "Student Type")
+
+discipline_df  <- add_table2_label(student_disc_summary, "Student Discipline")
+
+community_df <- community_summary %>%
+  add_table2_label("Community Type") %>%
+  mutate(
+    Characteristic = if_else(
+      Characteristic == "Unknown",
+      "Not reported",
+      Characteristic
+    )
+  ) %>% 
+  arrange(
+    Characteristic == "Not reported"  # FALSE first, TRUE (Not reported) last
+  )
+
+school_df <- school_summary %>%
+  add_table2_label("School Level") %>%
+  mutate(
+    Characteristic = if_else(
+      Characteristic == "Unknown",
+      "Not reported",
+      Characteristic
+    )
+  ) %>% 
+  arrange(
+    Characteristic == "Not reported" 
+  )
+
+race_df <- race_summary %>%
+  add_table2_label("Majority Student Race/Ethnicity") %>%
+  mutate(
+    Characteristic = case_when(
+      Characteristic == "Hispanic, latino, or spanish" ~ "Hispanic, Latino, or Spanish",
+      Characteristic == "American indian and/or alaska native" ~ "American Indian or Alaska Native",
+      Characteristic == "Native hawaiian/other pacific islander" ~ "Native Hawaiian or Other Pacific Islander",
+      TRUE ~ Characteristic
+    )
+  ) %>% 
+  arrange(
+    Characteristic == "Not reported"  
+  )
+
+fifthday_df <- fifthday_summary %>%
+  add_table2_label("Fifth Day Activities") %>%
+  mutate(
+    Characteristic = case_when(
+      Characteristic == "Nothing shut down school" ~ "Nothing (school closed)",
+      Characteristic == "Teacher in service" ~ "Teacher in-service",
+      TRUE ~ Characteristic
+    )
+  ) %>% 
+  arrange(
+    Characteristic == "Not reported"  
+  )
+
+# Numeric summaries get Section = "" (empty string)
+years_df <- tribble(
+  ~Section, ~Characteristic, ~N, ~Percent, ~Median, ~Range, ~indent,
+  "", "Publication Year", NA, NA,  as.character(publication_year_summary$Median),   
+  publication_year_summary$Range,  FALSE,
+  "",  "Study Year", NA, NA, as.character(summary_data_years$Median),
+  summary_data_years$Range, FALSE
+)
+
+# Bind rows and tidy
+table2_df <- bind_rows(
+  pubtype_df,
+  studenttype_df,
+  discipline_df,
+  years_df,
+  community_df,
+  school_df,
+  race_df,
+  fifthday_df
+) %>%
+  mutate(
+    N       = ifelse(is.na(N),       "", as.character(N)),
+    Percent = as.numeric(Percent),
+    Percent = ifelse(is.na(Percent),"",
+                     paste0(round(Percent, 0), "%")),
+    Median  = replace_na(Median,  ""),
+    Range   = replace_na(Range,   "")
+  )
+
+# Build gt table
+gt_tbl <- table2_df %>%
+  gt(groupname_col = "Section") %>%
+  cols_label(
+    Characteristic = md("**Characteristic**"),
+    N              = md("**N**"),
+    Percent        = md("**%**"),
+    Median         = md("**Median**"),
+    Range          = md("**Range**")
+  ) %>%
+  tab_style(
+    style = cell_text(indent = px(15)),
+    locations = cells_body(rows = indent == TRUE, columns = "Characteristic")
+  ) %>%
+  # bold all the group headers (the non-empty Sections)
+  tab_style(
+    style = cell_text(weight = "bold"),
+    locations = cells_row_groups(everything())
+  ) %>%
+  # bold just those two numeric rows
+  tab_style(
+    style = cell_text(weight = "bold"),
+    locations = cells_body(
+      rows    = Characteristic %in% c("Publication Year", "Study Year"),
+      columns = "Characteristic"
+    )
+  ) %>%
+  # hide the blank‐string group header
+  tab_style(
+    style = cell_text(color = "white"),
+    locations = cells_row_groups(groups = "")
+  ) %>%
+  # remove its top border
+  tab_style(
+    style = cell_borders(sides = "top", color = "white", weight = px(0)),
+    locations = cells_row_groups(groups = "")
+  ) %>%
+   # first footnote group
+  tab_footnote(
+    footnote = "Denominator for percentages is n = 70 student manuscripts.",
+    locations = cells_row_groups(
+      groups = c("Student Type", "Student Discipline")
+    )
+  ) %>%
+  
+  # second footnote group
+  tab_footnote(
+    footnote = "Percentages total more than 100% because categories are not mutually exclusive.",
+    locations = cells_row_groups(
+      groups = c("Community Type", "School Level", "Fifth Day Activities")
+    )
+  ) %>%
+  tab_style(
+    style = cell_borders(
+      sides  = "bottom",
+      color  = "black",
+      weight = px(2)      
+    ),
+    locations = cells_column_labels()
+  ) %>% 
+  tab_options(table.font.size = "small") %>%
+  cols_hide(columns = c("indent"))
+
+gt_tbl
+
+```
+
+
+
+## Table 3. Types of available research evidence on the four-day school week {#tbl2-study-evidence}
+
+```{r t3, echo = FALSE, message = FALSE, warning = FALSE}
+# Define group‐header labels as simple objects (easy to update)
+hdr_effectiveness   <- "Effectiveness"
+hdr_acceptability   <- "Acceptability"
+hdr_stakeholder     <- "Interest-Holders"
+hdr_inferential     <- "Inferential Approach"
+hdr_outcome         <- "Outcome Domain"
+hdr_equity          <- "Equitability of Effects"
+
+# Build each block
+
+## The first two summary rows come from evidence_summary
+eff_block <- evidence_summary[1, ] %>%
+  transmute(
+    Characteristic = hdr_effectiveness,
+    N              = N,
+    Percent        = round(Percentage, 0),
+    indent         = FALSE
+  )
+
+acc_block <- evidence_summary[2, ] %>%
+  transmute(
+    Characteristic = hdr_acceptability,
+    N              = N,
+    Percent        = round(Percentage, 0),
+    indent         = FALSE
+  )
+
+## Stakeholder group: header + indented subrows
+stake_hdr <- tibble(
+  Characteristic = hdr_stakeholder,
+  N              = NA_integer_,
+  Percent        = NA_real_,
+  indent         = FALSE
+)
+
+stake_blk <- stakeholder_summary %>%
+  transmute(
+    Characteristic = str_to_sentence(Category),
+    N              = N,
+    Percent        = round(Percentage, 0),
+    indent         = TRUE
+  )
+
+## Inferential approach
+inf_hdr <- tibble(
+  Characteristic = hdr_inferential,
+  N              = NA_integer_,
+  Percent        = NA_real_,
+  indent         = FALSE
+)
+
+inf_blk <- approach_summary %>%
+  transmute(
+    Characteristic = str_to_sentence(Category),
+    N              = N,
+    Percent        = round(Percentage, 0),
+    indent         = TRUE
+  ) %>% 
+  mutate(
+    Characteristic = case_when(
+      Characteristic == "Between-group (without controls)" ~ "Between-group (no statistical control)",
+      Characteristic == "Between-group (with controls)" ~ "Between-group (with statistical controls)",
+      TRUE ~ Characteristic
+    )
+  )
+
+## Outcome domain
+out_hdr <- tibble(
+  Characteristic = hdr_outcome,
+  N              = NA_integer_,
+  Percent        = NA_real_,
+  indent         = FALSE
+)
+
+out_blk <- outcome_summary %>%
+  transmute(
+    Characteristic = str_to_sentence(Category),
+    N              = N,
+    Percent        = round(Percentage, 0),
+    indent         = TRUE
+  ) %>% 
+  mutate(
+    Characteristic = case_when(
+      Characteristic == "Student achievement" ~ "Achievement",
+      Characteristic == "Student attendance" ~ "Attendance",
+      Characteristic == "Teacher and staff recruitment and retention" ~ "Staff/Teacher retention",
+      Characteristic == "Student health status or behaviors" ~ "Health",
+      Characteristic == "Student attainment" ~ "Attainment",
+      Characteristic == "Disciplinary incidents during school" ~ "School disciplinary incidents",
+      Characteristic == "Juvenile crime" ~ "Criminal activity",
+      TRUE ~ Characteristic
+    )
+  )
+
+## Equitability of effects (header comes from evidence_summary[3,])
+eq_hdr <- evidence_summary[3, ] %>%
+  transmute(
+    Characteristic = hdr_equity,
+    N              = N,
+    Percent        = round(Percentage, 0),
+    indent         = FALSE
+  )
+
+eq_blk <- equity_summary %>%
+  transmute(
+    Characteristic = str_to_sentence(Category),
+    N              = N,
+    Percent        = round(Percentage, 0),
+    indent         = TRUE
+  ) %>% 
+  mutate(
+    Characteristic = case_when(
+      Characteristic == "Student age" ~ "Age or grade level",
+      Characteristic == "Community type or rurality" ~ "Community type (rurality)",
+      Characteristic == "Student socioeconomic status" ~ "Socioeconomic status",
+      Characteristic == "Student race or ethnicity" ~ "Race or ethnicity",
+      Characteristic == "Student gender identity" ~ "Sex or gender identity",
+      Characteristic == "Student special education status" ~ "Special education status",
+      Characteristic == "Student immigration status" ~ "Immigration status",
+      Characteristic == "Student english language learner status" ~ "English language learner",
+      TRUE ~ Characteristic
+    )
+  )
+
+## Any remaining evidence_summary rows (no indent, bolded)
+rest_blk <- slice(evidence_summary, -1:-3) %>%
+  transmute(
+    Characteristic = str_to_sentence(Category),
+    N              = N,
+    Percent        = round(Percentage, 0),
+    indent         = FALSE
+  )
+
+# Stack them in the correct order
+evidence_tbl <- bind_rows(
+  eff_block,
+  acc_block,
+  stake_hdr, stake_blk,
+  inf_hdr,   inf_blk,
+  out_hdr,   out_blk,
+  eq_hdr,    eq_blk,
+  rest_blk
+) %>%
+  mutate(
+    # turn any NA into blank text
+    N       = if_else(is.na(N),       "", as.character(N)),
+    Percent = if_else(is.na(Percent), "", paste0(Percent, "%"))
+  )
+
+# Render gt table
+evidence_tbl %>%
+  gt() %>%
+  cols_label(
+    Characteristic = md("**Characteristic**"),
+    N              = md("**N**"),
+    Percent        = md("**%**")
+  ) %>%
+  # indent only the TRUE rows
+  tab_style(
+    style     = cell_text(indent = px(15)),
+    locations = cells_body(rows = indent, columns = "Characteristic")
+  ) %>%
+  # bold all non‐indented rows
+  tab_style(
+    style     = cell_text(weight = "bold"),
+    locations = cells_body(rows = !indent, columns = "Characteristic")
+  ) %>%
+  # one consolidated footnote on all four “*” groups
+  tab_footnote(
+    footnote = "* Denominator for specific categories is the number of studies on that type of evidence.",
+    locations = cells_body(
+      rows    = Characteristic %in% c(
+        hdr_stakeholder,
+        hdr_inferential,
+        hdr_outcome,
+        hdr_equity
+      ),
+      columns = "Characteristic"
+    )
+  ) %>%
+  tab_style(
+    style = cell_borders(
+      sides  = "bottom",
+      color  = "black",
+      weight = px(2)      
+    ),
+    locations = cells_column_labels()
+  ) %>%  
+  tab_options(table.font.size = "small") %>%
+  cols_hide(columns = "indent")
+

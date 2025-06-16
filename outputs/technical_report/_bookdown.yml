@@ -2,8 +2,13 @@ delete_merged_file: true
 output_dir: "../../docs/technical_report"
 new_session: yes
 output: 
-  bookdown::html_book:
-    theme: paper
+  bookdown::gitbook:
+    config:
+      sharing:
+        github: yes
+        twitter: no
+        facebook: no
+ #   theme: paper
 # language:
 #   ui:
 #     chapter_name: "Chapter "

@@ -1,17 +1,336 @@
 # Figures
 
 ```{r fig_path, include = FALSE}
-f1_path <- here::here("outputs", "technical_report", "images", "figure1_prisma.png")
-
 f2_path <- here::here("outputs", "technical_report", "images", "figure2_stateviz.png")
 ```
 
 
-## Figure 1. Flow diagram for selection of sources of evidence
+## Figure 1. Flow diagram for selection of sources of evidence {#fig1-flow-diagram}
 
-![](`r f1_path` "Figure 1")
+```{r setup, include = FALSE}
+# Source analysis script
+source(here::here("outputs", "technical_report", "scripts", "analysis_script.R"))
+library(glue)
+library(scales)
+library(plotly)
+
+```
+
+```{r fig1, include = FALSE}
+# Define PRISMA Counts
+records_identified <- number_search_results
+duplicates_removed <- number_of_duplicates
+records_screened <- records_identified - duplicates_removed
+records_excluded <- number_dropped
+reports_sought <- number_kept
+reports_not_retrieved <- number_not_retrieved
+reports_assessed <- reports_sought - reports_not_retrieved
+reports_excluded_total <- number_ineligible
+studies_included <- number_eligible
+reports_included <- number_eligible_reports
+
+# Rename Exclusion reasons
+exclusion_reasons_summary <- exclusion_reasons_summary %>% 
+  mutate(
+    label = case_when(
+      reason == "Ineligible concept - not four-day school week"     ~ "Ineligible concept (not 4DSW)",
+      reason == "Ineligible context - not K-12 schools"             ~ "Ineligible context (not K-12)",
+      reason == "Ineligible context - not in United States"         ~ "Ineligible context (not US)",
+      reason == "Ineligible study design - not empirical research"  ~ "Ineligible design (not empirical)",
+      reason == "Ineligible publication - not in English"           ~ "Ineligible publication (not English)",
+      TRUE                                                           ~ reason
+    )
+  )
+
+# Expose as a named vector for easy glue’ing
+exclusion_counts <- setNames(
+  exclusion_reasons_summary$n,
+  exclusion_reasons_summary$label
+)
+
+# Collapse into markdown bullets
+bullet_text <- glue_collapse(
+  glue("- {names(exclusion_counts)}: {exclusion_counts}"),
+  sep = "\n"
+)
+
+cat(bullet_text)
+
+
+# # Define Exclusion Reasons (Correctly Formatted with Line Breaks)
+# exclusion_reasons <- glue("
+# - Ineligible concept (not 4DSW): {159}
+# - Ineligible context (not K-12): {9}
+# - Ineligible context (not US): {16}
+# - Ineligible design (not empirical research): {180}
+# - Ineligible publication (not English): {3}
+# ")
+
+```
+
+```{r PRISMA2020-ggplot, echo = FALSE, warning = FALSE}
+# Define box content: x, y = center positions; label = box text
+boxes <- tibble(
+  x = c(3, 6.5, 3, 6.5, 3, 6.5, 3, 6.5, 3),
+  y = c(9, 9, 7.5, 7.5, 6, 6, 4.5, 4.3, 3),
+  height = c(rep(1, 7), 2, 1),
+  width  = c(rep(2.6, 7), 3.5, 2.6),
+  label = c(
+    glue("Records identified\n(n = {formatC(records_identified, format = 'd', big.mark = ',')})"),
+    glue("Duplicates removed\n(n = {formatC(duplicates_removed, format = 'd', big.mark = ',')})"),
+    glue("Records screened\n(n = {formatC(records_screened, format = 'd', big.mark = ',')})"),
+    glue("Records excluded\n(n = {formatC(records_excluded, format = 'd', big.mark = ',')})"),
+    glue("Reports sought\n(n = {formatC(reports_sought, format = 'd', big.mark = ',')})"),
+    glue("Not retrieved\n(n = {formatC(reports_not_retrieved, format = 'd', big.mark = ',')})"),
+    glue("Assessed for eligibility\n(n = {formatC(reports_assessed, format = 'd', big.mark = ',')})"),
+    NA_character_,
+    glue("Studies included\n(n = {formatC(studies_included, format = 'd', big.mark = ',')})\nReports = {formatC(reports_included, format = 'd', big.mark = ',')}")
+  ),
+  label_top = NA_character_,
+  label_bullets = NA_character_
+)
+
+# Centered top line for “Reports excluded”
+boxes$label_top[8] <- glue("Reports excluded\n(n = {reports_excluded_total})\n")
+
+# Dynamically inject the bullets for row 8
+boxes$label_bullets[8] <- bullet_text
+
+
+# Define arrow segments (from_x, from_y, to_x, to_y)
+arrows <- tribble(
+  ~x,  ~y,   ~xend, ~yend,
+  3,   8.5,    3,     8,   # Records identified → Records screened
+  4.3,   9,    5.2,     9,     # Records identified → Duplicates removed
+  3,   7,  3,     6.5,     # Records screened → Reports sought
+  4.3,   7.5,  5.2,     7.5,   # Records screened → Records excluded
+  3,   5.5,    3,     5,   # Reports sought → Assessed for eligibility
+  4.3,   6,    5.2,     6,     # Reports sought → Not retrieved
+  3,   4,  3,     3.5,     # Assessed → Included
+  4.3,   4.5,  4.75,     4.5    # Assessed → Reports excluded
+)
+
+# Define section headers
+sections <- data.frame(
+  label = c("Identification", "Screening", "Included"),
+  x = c(1, 1, 1),
+  y = c(9, 6, 3),
+  height = c(1.6, 4.1, 1.5)
+)
+
+
+# Plot
+ggplot() +
+  # Boxes
+  geom_rect(data = boxes, aes(xmin = x - width/2, xmax = x + width/2,
+                            ymin = y - height/2, ymax = y + height/2),
+          fill = "white", color = "black") +
+  
+  # geom_text(data = boxes, aes(x = x, y = y, label = label),
+  #           size = 3, lineheight = 1.1) +
+  
+  # Normal text
+geom_text(data = boxes, aes(x = x, y = y, label = label), size = 3.2, lineheight = 1.1) +
+
+# Centered top line for reports excluded
+geom_text(data = boxes[8, ], aes(x = x, y = y + 0.65, label = label_top),
+          size = 3.2, hjust = 0.5, lineheight = 1.1) +
+
+# Left-aligned bullets
+geom_text(data = boxes[8, ], aes(x = x - 1.55, y = y - 0.25, label = label_bullets),
+          size = 3, hjust = 0, lineheight = 1.1) +
+
+
+  # Arrows
+  geom_segment(data = arrows,
+               aes(x = x, y = y, xend = xend, yend = yend),
+               arrow = arrow(length = unit(0.15, "inches")),
+               lineend = "round") +
+
+  # Section header background
+  geom_rect(data = sections,
+            aes(xmin = x - 0.25, xmax = x + 0.25,
+                ymin = y - height / 2, ymax = y + height / 2),
+            fill = "lightblue", color = NA) +
+
+  # Section header text
+  geom_text(data = sections,
+            aes(x = x, y = y, label = label),
+            angle = 90, size = 4) +
+
+  coord_equal() +
+  theme_void()
+
+```
+
+
 
 ## Figure 2. Number of studies done with populations in each state
 
-![](`r f2_path` "Figure 2")
+```{r fig2, echo = FALSE, warning = FALSE, message = FALSE}
+# 1) Prepare your state_counts as before, including USPS codes
+state_counts <- data %>%
+  pivot_longer(cols = starts_with("state_"),
+               names_to  = "state_var",
+               values_drop_na = TRUE) %>%
+  mutate(
+    raw = str_remove(state_var, "^state_"),
+    state = case_when(
+      raw == "newmexico"       ~ "New Mexico",
+      raw == "southdakota"     ~ "South Dakota",
+      raw == "northdakota"     ~ "North Dakota",
+      raw == "newhampshire"    ~ "New Hampshire",
+      TRUE                     ~ str_to_title(raw)
+    )
+  ) %>%
+  count(state, name = "n") %>%
+  mutate(
+    code = state.abb[match(state, state.name)]
+  ) %>%
+  filter(!is.na(code))
+
+
+# 2) Compute sizeref & a text_size column
+max_n   <- max(state_counts$n)
+sizeref <- 2 * max_n / (45^2)  # adjust denominator to taste
+
+# Rescale n → font sizes between, say, 12pt and 24pt
+state_counts <- state_counts %>%
+  mutate(text_size = rescale(n, to = c(10, 18)))
+
+# 3) Build the plotly map
+fig <- plot_geo(state_counts, locationmode = "USA-states") %>%
+  add_trace(
+    type = 'scattergeo', mode = 'markers+text',
+    locations = ~code,
+    text      = ~n,
+    # Here we inject the vector of sizes
+    textfont  = list(
+      color  = 'white',
+      family = 'Arial',
+      size   = state_counts$text_size
+    ),
+    marker = list(
+      sizemode   = 'area',
+      sizeref    = sizeref,
+      sizemin    = 6,
+      size       = ~n,
+      color      = ~n,
+      colorscale = list( c(0, '#3CCEBB'), c(1, '#1F4340') ), 
+      cmin       = 0,
+      cmax       = max_n,
+      line       = list(width = 0)
+    ),
+    hoverinfo = 'text'
+  ) %>%
+  layout(
+    geo = list(
+      scope       = 'usa',
+      projection  = list(type = 'albers usa'),
+      showland    = TRUE, landcolor = 'lightgray',
+      subunitcolor= 'white', lakecolor = 'white', showcountries = FALSE
+    ),
+    margin = list(l=0, r=0, t=0, b=0)
+  )
+
+library(glue)
+
+# Build a single long footnote string, breaking into columns if you like
+# Here I split into 3 roughly equal parts for readability
+tbl <- state_counts %>%
+  arrange(desc(n))
+
+# Split into 3 columns
+col1 <- tbl[1:9, ]
+col2 <- tbl[10:19, ]
+col3 <- tbl[20:29, ]
+col4 <- tbl[30:nrow(tbl), ]
+
+foot1 <- glue_collapse(glue("{col1$state}: {col1$n}"), sep = "   ")
+foot2 <- glue_collapse(glue("{col2$state}: {col2$n}"), sep = "   ")
+foot3 <- glue_collapse(glue("{col3$state}: {col3$n}"), sep = "   ")
+foot4 <- glue_collapse(glue("{col4$state}: {col4$n}"), sep = "   ")
+
+# Add your existing fig code here...
+
+fig <- fig %>%
+  layout(
+    annotations = list(
+      # first row of counts
+      list(
+        x        = 0, 
+        y        = -0.10,
+        xref     = "paper", 
+        yref     = "paper",
+        text     = foot1,
+        showarrow= FALSE,
+        xanchor  = "left",
+        font     = list(size = 10)
+      ),
+      # second row of counts
+      list(
+        x        = 0, 
+        y        = -0.13,
+        xref     = "paper", 
+        yref     = "paper",
+        text     = foot2,
+        showarrow= FALSE,
+        xanchor  = "left",
+        font     = list(size = 10)
+      ),
+      # third row of counts
+      list(
+        x        = 0, 
+        y        = -0.16,
+        xref     = "paper", 
+        yref     = "paper",
+        text     = foot3,
+        showarrow= FALSE,
+        xanchor  = "left",
+        font     = list(size = 10)
+      ),
+      # 4th row of counts
+      list(
+        x        = 0, 
+        y        = -0.19,
+        xref     = "paper", 
+        yref     = "paper",
+        text     = foot4,
+        showarrow= FALSE,
+        xanchor  = "left",
+        font     = list(size = 10)
+      ),
+      
+      # the italic note
+      list(
+        x        = 0,
+        y        = -0.24,
+        xref     = "paper",
+        yref     = "paper",
+        text     = "*Some studies included multiple states.",
+        showarrow= FALSE,
+        xanchor  = "left",
+        font     = list(size = 9, italic = TRUE)
+      )
+    ),
+    margin = list(l = 0, r = 0, t = 0, b = 120)  # add bottom margin for text
+  )
+
+# Make it “static”
+fig <- fig %>%
+  config(
+    displayModeBar = FALSE,
+    staticPlot     = TRUE
+  )
+
+fig
+
+
+
+
+
+
+```
+
+
 
