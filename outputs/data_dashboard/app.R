@@ -5,8 +5,8 @@ if (!require("pacman")) install.packages("pacman")
 pacman::p_load(tidyverse, rio, here, DT, shiny, plotly, openxlsx)
 
 # Specify update dates
-last_search <- "November 2024"
-next_search <- "March 2025"
+last_search <- "April 2025"
+next_search <- "April 2026"
 
 # Import cleaned data
 cleaned_df <- import(here("data", "4dsw_app_data.xlsx"))
